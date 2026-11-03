@@ -667,6 +667,7 @@ export class JobTrackerView extends ItemView {
 		};
 		const details: [string, string][] = [
 			["Status", application.status],
+			["Date Posted", application.datePosted || "—"],
 			["Applied Date", application.dateApplied || "—"],
 			["Follow Up Date", application.followUpDate || "—"],
 			["Tags", (application.tags || []).join(", ") || "—"],
