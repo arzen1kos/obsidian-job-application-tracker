@@ -235,7 +235,7 @@ export class ApplicationService {
 			const requestedType = pathParts.length ? rawType.trim() : "";
 			const type = ARTEFACT_TYPES.find((item) => item.toLowerCase() === requestedType.toLowerCase())
 				|| this.inferArtefactType(path);
-			const previous = existing.find((item) => normalizePath(item.path) === path && item.type === type);
+			const previous = existing.find((item) => this.normalizeStoredPath(item.path) === path && item.type === type);
 			artefacts.push({
 				id: previous?.id || crypto.randomUUID(),
 				type,
@@ -249,19 +249,19 @@ export class ApplicationService {
 	}
 
 	isReferencedPath(path: string): boolean {
-		const normalized = normalizePath(path);
+		const normalized = this.normalizeStoredPath(path);
 		return this.getAllApplications().some((application) => {
 			return this.applicationReferencesPath(application, normalized);
 		});
 	}
 
 	private applicationReferencesPath(application: JobApplication, path: string): boolean {
-		const normalized = normalizePath(path);
+		const normalized = this.normalizeStoredPath(path);
 		const references = [
 			application.applicationFolderPath,
 			application.jobDescriptionFile,
 			...(application.artefacts || []).map((artefact) => artefact.path),
-		].filter((reference): reference is string => !!reference).map(normalizePath);
+		].filter((reference): reference is string => !!reference).map((reference) => this.normalizeStoredPath(reference));
 		return references.some((reference) =>
 			reference === normalized ||
 			reference.startsWith(normalized + "/") ||
@@ -423,10 +423,10 @@ export class ApplicationService {
 		const oldNormalized = normalizePath(oldPath);
 		const newNormalized = normalizePath(newPath);
 		const replacePath = (path: string): string => {
-			const normalized = normalizePath(path);
+			const normalized = this.normalizeStoredPath(path);
 			return normalized === oldNormalized || normalized.startsWith(oldNormalized + "/")
 				? newNormalized + normalized.slice(oldNormalized.length)
-				: normalized;
+				: path;
 		};
 		try {
 			for (const application of this.getAllApplications(true)) {
@@ -449,25 +449,28 @@ export class ApplicationService {
 							changed = true;
 						}
 					}
-					if (Array.isArray(fm.artefacts)) {
-						for (const artefact of fm.artefacts) {
-							if (artefact && typeof artefact.path === "string") {
-								const updatedPath = replacePath(artefact.path);
-								if (updatedPath !== artefact.path) {
-									artefact.path = updatedPath;
-									artefact.filename = updatedPath.split(/[\\/]/).pop() || updatedPath;
-									artefact.updatedAt = new Date().toISOString();
-									changed = true;
-								}
-							}
-						}
+					const storedArtefacts: unknown = fm.artefacts;
+					if (typeof storedArtefacts === "string" || Array.isArray(storedArtefacts)) {
+						const artefacts = this.deserializeArtefacts(storedArtefacts);
+						const updatedArtefacts = artefacts.map((artefact) => {
+							const updatedPath = replacePath(artefact.path);
+							if (updatedPath === artefact.path) return artefact;
+							changed = true;
+							return {
+								...artefact,
+								path: updatedPath,
+								filename: updatedPath.split(/[\\/]/).pop() || updatedPath,
+								updatedAt: new Date().toISOString(),
+							};
+						});
+						if (changed) fm.artefacts = updatedArtefacts;
 					}
 				});
 				if (changed) {
 					await this.app.vault.process(file, (content) =>
 						content.replace(/(!?\[\[)([^\]|#]+)([^\]]*\]\])/g, (match, prefix: string, target: string, suffix: string) => {
 							const updatedPath = replacePath(target);
-							return updatedPath === normalizePath(target) ? match : `${prefix}${updatedPath}${suffix}`;
+							return updatedPath === target ? match : `${prefix}${updatedPath}${suffix}`;
 						})
 					);
 					this.invalidateCache();
@@ -954,7 +957,7 @@ export class ApplicationService {
 	}
 
 	/**
-	 * Get all job applications in the configured tracker folder. Uses cached list if available.
+	 * Get applications in the configured folder and explicitly typed records moved elsewhere in the vault.
 	 */
 	getAllApplications(forceRefresh = false): JobApplication[] {
 		if (!forceRefresh && this.cachedApplications !== null) {
@@ -983,6 +986,18 @@ export class ApplicationService {
 				}
 			};
 			collectFromFolder(trackerAbstract);
+		}
+
+		const discoveredPaths = new Set(applications.map((application) => application.filePath));
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			if (discoveredPaths.has(file.path)) continue;
+			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			if (frontmatter?.type !== "job-application") continue;
+			const application = this.getApplicationFromCache(file);
+			if (application) {
+				applications.push(application);
+				discoveredPaths.add(file.path);
+			}
 		}
 
 		// Sort by last updated / date applied descending

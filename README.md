@@ -191,7 +191,7 @@ The implementation adds `datePosted` to `src/types.ts`. New records live at `App
 
 ### Obsidian events and migration
 
-The plugin listens to Vault `create`, `delete`, and `rename` events and invalidates the application cache when a linked folder or tracked application changes. Vault folder scanning uses `Vault.getFiles()`; external folders use a guarded desktop filesystem scan when available. Vault path changes update persisted folder, artefact, and legacy JD paths. A periodic dashboard refresh recalculates date-dependent deadline colors. External filesystem changes are not observable through Obsidian events and appear after refreshing the dashboard.
+The plugin listens to Vault `create`, `delete`, and `rename` events and invalidates the application cache when a linked folder or tracked application changes. Vault folder scanning uses `Vault.getFiles()`; external folders use a guarded desktop filesystem scan when available. Vault path changes update persisted folder, artefact, and legacy JD paths, including legacy `Type | path` artefact strings. Explicitly typed application notes remain discoverable if users move them outside the configured tracker folder. A periodic dashboard refresh recalculates date-dependent deadline colors. External filesystem changes are not observable through Obsidian events and appear after refreshing the dashboard.
 
 Migration is additive and non-destructive:
 
