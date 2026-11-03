@@ -36,6 +36,7 @@
 ### 📝 Native Markdown Notes & Data Storage
 - Each new application is saved as `Application.md` in its own role-first folder below your designated applications folder (`Applications/{Role - Company}/` by default).
 - Creating an application requires exactly one Job Description source: a linked file or pasted text. Pasted content is saved as `Job Description.md`; a selected vault file is moved into the application folder when automatic artefact moving is enabled.
+- The creation wizard guides users through Job Description, Application Details, Artefacts, and Review. JD file selection accepts PDF, TXT, and Markdown; supporting artefacts are linked separately without requiring path entry.
 - New applications record `datePosted` (default: today); older notes without this field remain valid and are not backfilled.
 - Zero vendor lock-in; fully compatible with Obsidian Search, Dataview, and graph view.
 - New application notes show only Company, Role, Location, Closing Date, and Tags. Contacts, interviews, status history, and other metadata remain in frontmatter and dedicated views/modals.

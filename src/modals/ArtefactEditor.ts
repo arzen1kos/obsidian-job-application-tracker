@@ -7,18 +7,30 @@ export interface ArtefactEditorValue {
 	artefacts: ApplicationArtefact[];
 }
 
+export interface ArtefactEditorRenderOptions {
+	jobDescription?: boolean;
+	folder?: boolean;
+	artefacts?: boolean;
+	jobDescriptionExtensions?: readonly string[];
+}
+
 class VaultFileSuggestModal extends FuzzySuggestModal<TFile> {
 	private onChoose: (file: TFile) => void;
+	private readonly allowedExtensions?: readonly string[];
 
-	constructor(app: App, onChoose: (file: TFile) => void) {
+	constructor(app: App, onChoose: (file: TFile) => void, allowedExtensions?: readonly string[]) {
 		super(app);
 		this.onChoose = onChoose;
+		this.allowedExtensions = allowedExtensions?.map((extension) => extension.replace(/^\./, "").toLowerCase());
 		this.setPlaceholder("Search vault files...");
 		this.emptyStateText = "No files found in the vault.";
 	}
 
 	getItems(): TFile[] {
-		return this.app.vault.getFiles();
+		const files = this.app.vault.getFiles();
+		return this.allowedExtensions
+			? files.filter((file) => this.allowedExtensions?.includes(file.extension.toLowerCase()))
+			: files;
 	}
 
 	getItemText(file: TFile): string {
@@ -91,6 +103,7 @@ export class ArtefactEditor {
 	private readonly value: ArtefactEditorValue;
 	private readonly onChange: (value: ArtefactEditorValue) => void;
 	private readonly discovered: ApplicationArtefact[];
+	private renderOptions: ArtefactEditorRenderOptions = {};
 	private selectedType: ArtefactType = "CV";
 	private isAddingArtefact = false;
 
@@ -111,11 +124,14 @@ export class ArtefactEditor {
 		this.discovered = discovered;
 	}
 
-	render(container: HTMLElement): void {
+	render(container: HTMLElement, options: ArtefactEditorRenderOptions = {}): void {
+		this.renderOptions = options;
 		container.empty();
-		this.renderJobDescription(container);
-		this.renderFolder(container);
-		this.renderArtefacts(container);
+		if (options.jobDescription !== false) {
+			this.renderJobDescription(container, options.jobDescriptionExtensions);
+		}
+		if (options.folder !== false) this.renderFolder(container);
+		if (options.artefacts !== false) this.renderArtefacts(container);
 	}
 
 	private publish(container: HTMLElement): void {
@@ -123,10 +139,10 @@ export class ArtefactEditor {
 			applicationFolderPath: this.value.applicationFolderPath,
 			artefacts: [...this.value.artefacts],
 		});
-		this.render(container);
+		this.render(container, this.renderOptions);
 	}
 
-	private renderJobDescription(container: HTMLElement): void {
+	private renderJobDescription(container: HTMLElement, allowedExtensions?: readonly string[]): void {
 		container.createEl("h4", { text: "Job Description" });
 		const current = this.value.artefacts.find((artefact) => artefact.type === "Job Description");
 		if (!current) {
@@ -137,12 +153,12 @@ export class ArtefactEditor {
 						this.openFilePicker(container, (file) => {
 							this.value.artefacts = this.upsertArtefact("Job Description", file, current);
 							this.publish(container);
-						});
+						}, allowedExtensions);
 					})
 				);
 			return;
 		}
-		this.renderArtefactRow(container, current, true);
+		this.renderArtefactRow(container, current, true, allowedExtensions);
 	}
 
 	private renderFolder(container: HTMLElement): void {
@@ -265,7 +281,12 @@ export class ArtefactEditor {
 		}
 	}
 
-	private renderArtefactRow(container: HTMLElement, artefact: ApplicationArtefact, linked: boolean): void {
+	private renderArtefactRow(
+		container: HTMLElement,
+		artefact: ApplicationArtefact,
+		linked: boolean,
+		allowedExtensions?: readonly string[]
+	): void {
 		const file = this.plugin.appService.resolveFile(artefact.path);
 		const external = isAbsoluteFilePath(artefact.path);
 		const missing = external ? !this.externalPathExists(artefact.path) : !(file instanceof TFile);
@@ -274,7 +295,7 @@ export class ArtefactEditor {
 			.setDesc(missing ? "File not found" : linked ? "" : "Discovered in the linked folder");
 		if (missing) {
 			row.addButton((button) =>
-				button.setButtonText("Relink").onClick(() => this.chooseReplacement(artefact, container))
+				button.setButtonText("Relink").onClick(() => this.chooseReplacement(artefact, container, allowedExtensions))
 			);
 		} else {
 			row.addButton((button) =>
@@ -293,7 +314,7 @@ export class ArtefactEditor {
 
 		if (!linked) return;
 		row.addButton((button) =>
-			button.setButtonText("Change").onClick(() => this.chooseReplacement(artefact, container))
+			button.setButtonText("Change").onClick(() => this.chooseReplacement(artefact, container, allowedExtensions))
 		);
 		row.addButton((button) =>
 			button.setButtonText("Remove").onClick(() => {
@@ -303,7 +324,11 @@ export class ArtefactEditor {
 		);
 	}
 
-	private chooseReplacement(artefact: ApplicationArtefact, container: HTMLElement): void {
+	private chooseReplacement(
+		artefact: ApplicationArtefact,
+		container: HTMLElement,
+		allowedExtensions?: readonly string[]
+	): void {
 		this.openFilePicker(container, (file) => {
 			this.value.artefacts = this.value.artefacts.map((item) =>
 				item.id === artefact.id
@@ -317,7 +342,7 @@ export class ArtefactEditor {
 					: item
 			);
 			this.publish(container);
-		});
+		}, allowedExtensions);
 	}
 
 	private upsertArtefact(type: ArtefactType, file: SelectedArtefactFile, existing?: ApplicationArtefact): ApplicationArtefact[] {
@@ -342,12 +367,20 @@ export class ArtefactEditor {
 		return [...this.value.artefacts, artefact];
 	}
 
-	private openFilePicker(container: HTMLElement, onChoose: (file: SelectedArtefactFile) => void): void {
+	private openFilePicker(
+		container: HTMLElement,
+		onChoose: (file: SelectedArtefactFile) => void,
+		allowedExtensions?: readonly string[]
+	): void {
 		this.openNativePicker(container, false, (selected) => {
 			const path = getNativePath(selected);
 			if (!path || !isAbsoluteFilePath(path)) {
 				new Notice("This Obsidian platform does not expose the selected file's absolute path. Choose a file from the vault instead.");
-				new VaultFileSuggestModal(this.app, (file) => onChoose(file)).open();
+				new VaultFileSuggestModal(this.app, (file) => onChoose(file), allowedExtensions).open();
+				return;
+			}
+			if (allowedExtensions && !allowedExtensions.includes(selected.name.split(".").pop()?.toLowerCase() || "")) {
+				new Notice(`Choose a ${allowedExtensions.map((extension) => `.${extension}`).join(", ")} file.`);
 				return;
 			}
 			let stat: { ctimeMs: number; mtimeMs: number } | undefined;
@@ -363,7 +396,7 @@ export class ArtefactEditor {
 				name: selected.name,
 				stat: stat ? { ctime: stat.ctimeMs, mtime: stat.mtimeMs } : undefined,
 			});
-		});
+		}, allowedExtensions);
 	}
 
 	private openFolderPicker(container: HTMLElement, onChoose: (path: string) => void): void {
@@ -382,11 +415,13 @@ export class ArtefactEditor {
 	private openNativePicker(
 		container: HTMLElement,
 		directory: boolean,
-		onSelect: (file: File) => void
+		onSelect: (file: File) => void,
+		allowedExtensions?: readonly string[]
 	): void {
 		const input = container.createEl("input", {
 			type: "file",
 			attr: {
+				...(allowedExtensions ? { accept: allowedExtensions.map((extension) => `.${extension}`).join(",") } : {}),
 				...(directory ? { webkitdirectory: "", directory: "" } : {}),
 			},
 		});
