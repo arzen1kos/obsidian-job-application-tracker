@@ -645,8 +645,8 @@ export class JobTrackerView extends ItemView {
 			}
 			const rawA = this.sortField === "folder" ? a.applicationFolderPath : a[this.sortField as Exclude<JobSortField, "folder" | "jobDescription" | "cvs" | "coverLetters" | "notes" | "artefacts">];
 			const rawB = this.sortField === "folder" ? b.applicationFolderPath : b[this.sortField as Exclude<JobSortField, "folder" | "jobDescription" | "cvs" | "coverLetters" | "notes" | "artefacts">];
-			const valA = typeof rawA === "string" ? rawA.toLowerCase() : "";
-			const valB = typeof rawB === "string" ? rawB.toLowerCase() : "";
+			const valA = Array.isArray(rawA) ? rawA.join(", ").toLowerCase() : typeof rawA === "string" ? rawA.toLowerCase() : "";
+			const valB = Array.isArray(rawB) ? rawB.join(", ").toLowerCase() : typeof rawB === "string" ? rawB.toLowerCase() : "";
 
 			if (valA < valB) return this.sortAscending ? -1 : 1;
 			if (valA > valB) return this.sortAscending ? 1 : -1;
@@ -667,6 +667,7 @@ export class JobTrackerView extends ItemView {
 		};
 		const details: [string, string][] = [
 			["Status", application.status],
+			["Date Posted", application.datePosted || "—"],
 			["Applied Date", application.dateApplied || "—"],
 			["Follow Up Date", application.followUpDate || "—"],
 			["Tags", (application.tags || []).join(", ") || "—"],

@@ -24,7 +24,6 @@ export class EditApplicationModal extends BaseApplicationModal {
 	private closingDate = "";
 	private applicationFolderPath = "";
 	private artefacts: ApplicationArtefact[] = [];
-	private newJobDescriptionText = "";
 	private tags: string[] = [];
 
 	private companyInputEl: HTMLInputElement | null = null;
@@ -252,21 +251,6 @@ export class EditApplicationModal extends BaseApplicationModal {
 			discovered
 		).render(artefactContainer);
 
-		// Or paste new JD text
-		new Setting(contentEl)
-			.setName("Update JD Text")
-			.setDesc("Append or overwrite markdown text in ## Job Description section")
-			.addTextArea((text) => {
-				text.inputEl.maxLength = 10000;
-				text
-					.setPlaceholder("Paste updated requirements here...")
-					.setValue(this.newJobDescriptionText)
-					.onChange((value) => {
-						this.newJobDescriptionText = value;
-					});
-				text.inputEl.rows = 4;
-			});
-
 		// Submit button
 		let submitBtn: ButtonComponent;
 		new Setting(contentEl)
@@ -357,8 +341,7 @@ export class EditApplicationModal extends BaseApplicationModal {
 					artefacts: this.artefacts,
 					jobDescriptionFile: this.artefacts.find((item) => item.type === "Job Description")?.path || "",
 					tags: [...new Set(["job-application", ...this.tags])],
-				},
-				this.newJobDescriptionText ? this.newJobDescriptionText.trim() : undefined
+				}
 			);
 
 			// Rename file if company or role changed and target name is available

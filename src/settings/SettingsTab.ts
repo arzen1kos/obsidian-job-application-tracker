@@ -1,4 +1,4 @@
-import { App, debounce, DropdownComponent, normalizePath, PluginSettingTab, Setting, SettingDefinitionItem, TextAreaComponent } from "obsidian";
+import { App, ButtonComponent, debounce, DropdownComponent, normalizePath, PluginSettingTab, Setting, SettingDefinitionItem, TextAreaComponent } from "obsidian";
 import JobApplicationTrackerPlugin from "../main";
 import { DEFAULT_INTERVIEW_PREP_TEMPLATE, DEFAULT_SETTINGS, DEFAULT_STATUSES } from "../constants";
 
@@ -70,24 +70,6 @@ export class JobApplicationTrackerSettingTab extends PluginSettingTab {
 										this.plugin.settings.trackerFolderPath = this.sanitizeFolderPath(
 											value,
 											DEFAULT_SETTINGS.trackerFolderPath
-										);
-										this.debouncedSave();
-									})
-							);
-						},
-					},
-					{
-						name: "Interview Notes Folder",
-						desc: "Folder where generated interview prep and debrief notes will be stored.",
-						render: (setting: Setting) => {
-							setting.addText((text) =>
-								text
-									.setPlaceholder("Applications/Interviews")
-									.setValue(this.plugin.settings.interviewNotesFolderPath)
-									.onChange((value) => {
-										this.plugin.settings.interviewNotesFolderPath = this.sanitizeFolderPath(
-											value,
-											DEFAULT_SETTINGS.interviewNotesFolderPath
 										);
 										this.debouncedSave();
 									})
@@ -182,16 +164,58 @@ export class JobApplicationTrackerSettingTab extends PluginSettingTab {
 						},
 					},
 					{
-						name: "Hidden table columns",
-						desc: "Restore every table attribute to its default visible state.",
+						name: "Table View Settings",
+						desc: "Restore hidden table attributes or show individual columns again.",
 						render: (setting: Setting) => {
-							setting.addButton((button) => button
-								.setButtonText("Restore all columns")
-								.setDisabled(this.plugin.settings.hiddenTableColumns.length === 0)
-								.onClick(async () => {
+							let restoreAllButton: ButtonComponent | null = null;
+							setting.addButton((button) => {
+								restoreAllButton = button;
+								button
+									.setButtonText("Restore all columns")
+									.setDisabled(this.plugin.settings.hiddenTableColumns.length === 0)
+									.onClick(async () => {
 									this.plugin.settings.hiddenTableColumns = [];
+									this.plugin.settings.tableColumnsInitialized = true;
 									await this.plugin.saveSettings();
-								}));
+									renderHiddenColumns();
+									});
+							});
+							const labels: Record<string, string> = {
+								jobDescription: "JD",
+								role: "Role",
+								company: "Company",
+								datePosted: "Date Posted",
+								status: "Status",
+								jobUrl: "URL",
+								location: "Location",
+								tags: "Tags",
+								closingDate: "Closing Date",
+								folder: "Folder",
+								cvs: "CVs",
+								coverLetters: "Cover Letters",
+								notes: "Notes",
+								artefacts: "Artefacts",
+							};
+							const hiddenColumns = setting.controlEl.createDiv({ cls: "job-tracker-hidden-columns" });
+							const renderHiddenColumns = () => {
+								hiddenColumns.empty();
+								restoreAllButton?.setDisabled(this.plugin.settings.hiddenTableColumns.length === 0);
+								if (this.plugin.settings.hiddenTableColumns.length === 0) {
+									hiddenColumns.createEl("p", { text: "All table columns are visible.", cls: "setting-item-description" });
+									return;
+								}
+								for (const column of this.plugin.settings.hiddenTableColumns) {
+									new Setting(hiddenColumns)
+										.setName(labels[column] || column)
+										.addButton((button) => button.setButtonText("Show").onClick(async () => {
+											this.plugin.settings.hiddenTableColumns = this.plugin.settings.hiddenTableColumns.filter((item) => item !== column);
+											this.plugin.settings.tableColumnsInitialized = true;
+											await this.plugin.saveSettings();
+											renderHiddenColumns();
+										}));
+								}
+							};
+							renderHiddenColumns();
 						},
 					},
 					{

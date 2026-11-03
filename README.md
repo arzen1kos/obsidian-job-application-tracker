@@ -20,11 +20,11 @@
 ### 📊 Visual Dashboard with 6 View Modes
 
 - **Kanban Board**: Drag-and-drop cards across pipeline stage columns (*Wishlist* ➔ *Applied* ➔ *Screening* ➔ *Interviewing* ➔ *Offer* ➔ *Accepted* / *Rejected* / *Withdrawn* / *Ghosted*). Moving cards instantly updates note frontmatter and logs timestamped status activity.
-- **Table View**: Company, Role, Status, Closing Date, Folder, Job Description, CV versions, Cover Letter versions, Notes, and artefact counts. Sort by closing date, filter by deadline, and open linked files directly without exposing raw paths.
+- **Table View**: Defaults to JD, Role, Company, Date Posted, Status, URL, Location, and Tags. Closing Date, Folder, CV versions, Cover Letter versions, Notes, and artefact counts can be restored in Table View Settings. Sort from a column header's context menu and open linked files without exposing raw paths.
 - **List View**: Compact card layout highlighting workplace type, compensation, follow-up deadlines, and next scheduled interviews.
-- **Gallery View**: Status-accented cards for company, role, location, and closing date.
-- **Company View**: Group applications by company, with counts and status breakdowns; search and filters apply here too.
-- **Details pane**: Select an application to see its complete metadata and open linked artefacts.
+- **Gallery View**: Status-accented cards for company, role, location, and closing date (Applied blue, Interviewing yellow, Offer green, Rejected red, Withdrawn grey).
+- **Company View**: Group the filtered applications by company, with counts and status breakdowns. It uses shared search/filters and has no separate sort control.
+- **Details pane**: Select an application to see its metadata, including Date Posted, and open linked artefacts.
 - **Saved Views**: Save the current view mode, filters, and sort direction for quick reuse.
 - **Metrics & Conversion Analytics**:
   - **Sankey Pipeline Diagram**: Pure native SVG vector Sankey diagram charting the flow from application sources through screening and interview stages to final outcomes (zero external dependencies, zero permission prompts).
@@ -34,8 +34,10 @@
   - **Recent Activity Timeline**: Timestamped audit trail of recent status transitions across all applications.
 
 ### 📝 Native Markdown Notes & Data Storage
-
-- Each application is saved in its own Markdown folder below your designated applications folder (`Applications/{Company - Role}/` by default).
+- Each new application is saved as `Application.md` in its own role-first folder below your designated applications folder (`Applications/{Role - Company}/` by default).
+- Creating an application requires exactly one Job Description source: a linked file or pasted text. Pasted content is saved as `Job Description.md`; a selected vault file is moved into the application folder when automatic artefact moving is enabled.
+- The creation wizard guides users through Job Description, Application Details, Artefacts, and Review. JD file selection accepts PDF, TXT, and Markdown; supporting artefacts are linked separately without requiring path entry.
+- New applications record `datePosted` (default: today); older notes without this field remain valid and are not backfilled.
 - Zero vendor lock-in; fully compatible with Obsidian Search, Dataview, and graph view.
 - New application notes show only Company, Role, Location, Closing Date, and Tags. Contacts, interviews, status history, and other metadata remain in frontmatter and dedicated views/modals.
 - Initial notes and pasted job descriptions are created as standard Markdown files in the application folder. Existing long-form note bodies are preserved as `Application Notes.md` before the application note is simplified on first open.
@@ -72,8 +74,8 @@
 
 ### 🔍 Live Search, Filtering & Follow-ups
 
-- Search across company names, roles, locations, workplace types, sources, compensation, and contact names with instant, debounced results.
-- Filter by application stage and closing-date state. Closing dates are highlighted as overdue, due within 7 days, due within 14 days, later, or unspecified.
+- Search across company names, roles, locations, workplace types, sources, compensation, artefact filenames, and contact names with instant, debounced results.
+- Filter by status, company, tags, location, and closing-date state. Closing dates are highlighted as overdue, due within 7 days, due within 14 days, later, or unspecified.
 - Sort the table by closing date; deadline coloring refreshes periodically while the dashboard is open.
 
 ### ♿ Accessibility & Mobile Support
@@ -97,11 +99,32 @@ For development, run `npm run dev` and load the same plugin folder in a test vau
 
 ### Application and artefact workflow
 
-1. Choose **Add Application**, enter the company and role, and select any configured tags.
-2. The plugin creates a `{Company - Role}` folder under the configured Applications Folder and stores the application Markdown note there.
-3. Use the Job Description or Artefacts controls to open the native file chooser. Select a type for generic artefacts; repeat to add multiple CVs, cover letters, or notes.
-4. Link a folder when the application has a dedicated artefact directory. Vault contents refresh on Obsidian file events; use the dashboard Refresh action after external changes.
-5. In Settings, configure tag options and whether to move vault artefacts into each new application folder. The default is enabled; external files are never moved.
+1. Choose **Add Application**. First browse to a PDF, TXT, or Markdown Job Description, or paste its text.
+2. Enter company, role, Date Posted (defaults to today), status, Closing Date, location, tags, and any other available details. Date Applied and Follow Up Date appear only when Status is Applied.
+3. Add supporting artefacts by choosing a type and selecting a file. Repeat to link multiple CVs, cover letters, interview notes, contracts, portfolios, or other artefacts.
+4. Review the details. The plugin creates a role-first `{Role - Company}` folder and writes `Application.md` plus a pasted `Job Description.md` (if text was chosen).
+5. In Settings, configure tag options and whether to move linked vault files into each new application folder. The default is enabled; external files are never moved. Renamed or moved vault links are reconciled automatically.
+
+Example vault layout:
+
+```text
+Applications/
+└── Software Engineer - Datacom/
+    ├── Application.md
+    ├── JD.pdf
+    ├── CV - 2026-10-15.docx
+    ├── CV - 2026-11-03.docx
+    ├── Cover Letter.docx
+    └── Interview Notes.md
+```
+
+### Views and navigation
+
+- **Table**: Right-click a visible column header to hide it or sort ascending/descending. Restore individual hidden columns in **Settings → Table View Settings** or restore all from the table.
+- **Gallery**: Browse status-coloured cards showing Company, Role, Location, and Closing Date.
+- **Company**: Group the current filtered applications by company, with application totals and status breakdowns. There is no separate company sort control.
+- **Details pane**: Select an application row/card to see metadata, open its folder, and navigate to linked artefacts.
+- **Saved views**: Choose Table, Gallery, or Company, apply the shared search/filters, then select **Save view** to preserve the view mode, filters, and sort state.
 
 The native chooser is an Electron desktop capability. The implementation uses the browser's native file/directory input, then reads Electron's exposed absolute file path when available. On mobile/web or builds that hide the absolute path, users can still select files and folders inside the vault via Obsidian's fuzzy selector. An empty external folder may not be selectable through the browser directory chooser; select a non-empty folder or link it from the vault.
 
@@ -132,14 +155,14 @@ Open the Obsidian Command Palette (<kbd>Cmd</kbd> + <kbd>P</kbd> or <kbd>Ctrl</k
 Under **Settings** ➔ **Job Application Tracker**, you can configure:
 
 - **Applications Folder**: Target folder where application notes are created (default: `Applications`).
-- **Interview Notes Folder**: Subfolder for generated prep and debrief notes (default: `Applications/Interviews`).
+- The legacy interview-notes folder value remains loaded for existing installations but is no longer configurable.
 - **Attachments Folder**: Retained for compatibility with older versions; the filesystem-linking workflow does not write files there.
 - **Default View Location**: Main Tab (Center) or Sidebar when opening via ribbon icon or command.
 - **Default Initial Status**: Default stage for new applications (default: `Applied`).
 - **Application Sources**: Comma-separated list of sources (e.g. *LinkedIn, Referral, Company Website, Indeed, Wellfound, Otta*).
 - **Automatically move artefacts into application folder**: Move linked vault files into each new application folder (enabled by default). External files are not moved.
 - **Application tags**: Add, edit, reorder, and delete the selectable tag options used by application forms.
-- **Hidden table columns**: Restore hidden attributes from the setting or the Table view's Restore columns button.
+- **Table View Settings**: Show hidden columns individually or restore all columns; use the Table view's Restore columns button to show them all at once.
 - **Interview Prep Note Template**: Full Markdown template supporting placeholders:
   - `{{company}}`
   - `{{role}}`
@@ -155,11 +178,11 @@ Under **Settings** ➔ **Job Application Tracker**, you can configure:
 
 ### Existing architecture and gaps
 
-Applications are Markdown notes discovered by `ApplicationService` from the configured tracker folder. YAML frontmatter is the persisted source for status, contacts, interviews, and artefact references. `JobTrackerView` coordinates the Kanban, Table, List, Metrics, Gallery, and Company renderers. Legacy upload helpers and settings remain for compatibility, but current workflows link files instead of storing binaries in the plugin.
+Applications are Markdown notes discovered by `ApplicationService` from the configured tracker folder; explicitly typed application notes continue to be discovered if moved elsewhere in the vault. YAML frontmatter is the persisted source for status, contacts, interviews, and artefact references. `JobTrackerView` coordinates the Kanban, Table, List, Metrics, Gallery, and Company renderers. Legacy upload helpers and settings remain for compatibility, but current workflows link files instead of storing binaries in the plugin.
 
 ### Proposed data model
 
-The application Markdown note remains the database record. New fields are optional for old notes:
+The application Markdown note remains the metadata record. New fields are optional for old notes:
 
 ```ts
 type ArtefactType =
@@ -177,6 +200,7 @@ interface ApplicationArtefact {
 }
 
 interface JobApplication {
+  datePosted?: string; // YYYY-MM-DD
   applicationFolderPath?: string;
   closingDate?: string; // YYYY-MM-DD
   artefacts: ApplicationArtefact[];
@@ -184,23 +208,23 @@ interface JobApplication {
 }
 ```
 
-The implementation adds these fields to `src/types.ts`. Folder contents are discovered at read time from the vault, rather than duplicated as a second file inventory in plugin data. Explicit links remain in frontmatter so missing files can be shown and renamed links can be repaired.
+The implementation adds `datePosted` to `src/types.ts`. New records live at `Applications/{Role - Company}/Application.md` (or the configured applications folder), with their JD and linked vault artefacts colocated when automatic moving is enabled. Folder contents are discovered at read time from the vault, rather than duplicated as a second file inventory in plugin data. Explicit links remain in frontmatter so missing files can be shown and renamed links can be repaired.
 
 ### Obsidian events and migration
 
-The plugin listens to Vault `create`, `delete`, and `rename` events and invalidates the application cache when a linked folder or tracked application changes. Vault folder scanning uses `Vault.getFiles()`; external folders use a guarded desktop filesystem scan when available. Vault path changes update persisted folder, artefact, and legacy JD paths. A periodic dashboard refresh recalculates date-dependent deadline colors. External filesystem changes are not observable through Obsidian events and appear after refreshing the dashboard.
+The plugin listens to Vault `create`, `delete`, and `rename` events and invalidates the application cache when a linked folder or tracked application changes. Vault folder scanning uses `Vault.getFiles()`; external folders use a guarded desktop filesystem scan when available. Vault path changes update persisted folder, artefact, and legacy JD paths, including legacy `Type | path` artefact strings. Explicitly typed application notes remain discoverable if users move them outside the configured tracker folder. A periodic dashboard refresh recalculates date-dependent deadline colors. External filesystem changes are not observable through Obsidian events and appear after refreshing the dashboard.
 
 Migration is additive and non-destructive:
 
-1. Existing application notes, statuses, contacts, interviews, body text, and `jobDescriptionFile` values remain in place.
+1. Existing application notes, paths, statuses, contacts, interviews, body text, and `jobDescriptionFile` values remain in place; existing notes are not moved into the new per-application folder layout.
 2. A legacy JD path is exposed as a Job Description artefact when reading old frontmatter; the embedded note section remains unchanged.
 3. Older `Type | path` artefact strings are parsed into typed artefact records on load. On editing, artefacts are written to `artefacts` while `jobDescriptionFile` remains synchronized for older plugin versions.
 4. Users can set `applicationFolderPath`; its current files are discovered automatically. The default auto-move option relocates linked vault files into a newly created application folder without overwriting existing names. External files are left untouched.
-5. `closingDate` is optional and is preserved as `YYYY-MM-DD`.
+5. `closingDate` and `datePosted` are optional for legacy applications and are preserved as `YYYY-MM-DD`; newly created applications default `datePosted` to today.
 
 ### Dashboard and modal UX
 
-The application editor exposes Closing Date and a guided file/folder workflow using the platform file chooser, falling back to searchable Obsidian fuzzy modals when absolute paths are unavailable. Job Description is managed separately; generic artefacts use a type dropdown and support multiple links per type. Each linked file can be opened, revealed, changed/relinked, or unlinked without deleting it. A folder picker links an application folder, whose contents are displayed in separate Job Description, CV, Cover Letter, Interview Notes, and Other Artefacts groups. Table headers provide context-menu actions for hiding and sorting columns; hidden columns can be restored in the Table view or Settings. Gallery, Company, saved views, multi-field filters, and the complete Details pane are also available.
+The application editor exposes Closing Date and a guided file/folder workflow using the platform file chooser, falling back to searchable Obsidian fuzzy modals when absolute paths are unavailable. Job Description is managed separately; generic artefacts use a type dropdown and support multiple links per type. Each linked file can be opened, revealed, changed/relinked, or unlinked without deleting it. A folder picker links an application folder, whose contents are displayed in separate Job Description, CV, Cover Letter, Interview Notes, and Other Artefacts groups. Table view defaults to JD, Role, Company, Date Posted, Status, URL, Location, and Tags; additional columns can be restored in Table View Settings. Headers provide context-menu actions for hiding and sorting columns. Gallery, Company, saved views, multi-field filters, and the complete Details pane are also available.
 
 The reusable `ArtefactEditor` uses native `<input type="file">` and directory selection dialogs on desktop, with fuzzy vault selectors as a fallback. `NewApplicationModal` and `EditApplicationModal` persist links through `ApplicationService`; `ManageApplicationModal` presents grouped read-only links; and `TableRenderer` exposes human-friendly counts and quick navigation. A missing persisted link offers relinking and unlinking, while a folder-discovered item remains in the folder collection if its explicit reference is removed.
 

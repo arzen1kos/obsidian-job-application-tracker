@@ -1474,3 +1474,59 @@
 .job-tracker-is-hidden {
 	display: none;
 }
+
+.job-tracker-wizard-progress {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	padding: 8px 0 14px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+.job-tracker-wizard-progress strong {
+	color: var(--text-normal);
+}
+
+.job-tracker-wizard-content {
+	max-height: 65vh;
+	overflow-y: auto;
+	padding: 8px 2px;
+}
+
+.job-tracker-wizard-choice {
+	display: flex;
+	gap: 8px;
+	margin: 12px 0;
+}
+
+.job-tracker-wizard-choice button {
+	padding: 8px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.job-tracker-wizard-choice button.is-active {
+	border-color: var(--interactive-accent);
+	background: color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary));
+}
+
+.job-tracker-wizard-footer {
+	display: flex;
+	justify-content: flex-end;
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 8px;
+}
+
+.job-tracker-review-row {
+	display: grid;
+	grid-template-columns: minmax(110px, 0.35fr) minmax(0, 1fr);
+	gap: 12px;
+	padding: 7px 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.job-tracker-review-row span {
+	overflow-wrap: anywhere;
+}
