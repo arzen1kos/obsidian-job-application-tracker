@@ -1,5 +1,5 @@
-import { setIcon } from "obsidian";
-import { JobApplication, JobSortField } from "../../types";
+import { Notice, normalizePath, setIcon, TFolder } from "obsidian";
+import { getDeadlineStatus, JobApplication, JobSortField } from "../../types";
 import { getStatusClassName } from "../../constants";
 import { UpdateStatusModal } from "../../modals/UpdateStatusModal";
 import { JobTrackerView } from "../JobTrackerView";
@@ -33,33 +33,38 @@ export class TableRenderer {
 		const thead = table.createEl("thead");
 		const headerRow = thead.createEl("tr");
 
-		const columns: { label: string; field: JobSortField }[] = [
+		const columns: { label: string; field?: JobSortField }[] = [
 			{ label: "Company", field: "company" },
 			{ label: "Role", field: "role" },
 			{ label: "Status", field: "status" },
-			{ label: "Applied Date", field: "dateApplied" },
-			{ label: "Location", field: "location" },
-			{ label: "Salary", field: "salary" },
-			{ label: "Source", field: "source" },
+			{ label: "Closing Date", field: "closingDate" },
+			{ label: "Folder" },
+			{ label: "JD" },
+			{ label: "CVs" },
+			{ label: "Cover Letters" },
+			{ label: "Notes" },
+			{ label: "Artefacts" },
 		];
 
 		for (const col of columns) {
-			const isSorted = this.view.sortField === col.field;
+			const isSorted = !!col.field && this.view.sortField === col.field;
 			const ariaSort = isSorted ? (this.view.sortAscending ? "ascending" : "descending") : "none";
 			const th = headerRow.createEl("th", {
-				cls: "job-tracker-sortable-th",
-				attr: { role: "columnheader", "aria-sort": ariaSort, tabindex: "0" },
+				cls: col.field ? "job-tracker-sortable-th" : "",
+				attr: col.field ? { role: "columnheader", "aria-sort": ariaSort, tabindex: "0" } : { role: "columnheader" },
 			});
 			th.createSpan({ text: col.label });
 			if (isSorted) {
 				const sortIcon = th.createSpan({ cls: "job-tracker-sort-indicator" });
 				setIcon(sortIcon, this.view.sortAscending ? "arrow-up" : "arrow-down");
 			}
+			if (!col.field) continue;
+			const field = col.field;
 			const handleSort = () => {
-				if (this.view.sortField === col.field) {
+				if (this.view.sortField === field) {
 					this.view.sortAscending = !this.view.sortAscending;
 				} else {
-					this.view.sortField = col.field;
+					this.view.sortField = field;
 					this.view.sortAscending = true;
 				}
 				this.view.renderContentOnly();
@@ -73,8 +78,6 @@ export class TableRenderer {
 			};
 		}
 
-		headerRow.createEl("th", { text: "Contacts" });
-		headerRow.createEl("th", { text: "Interviews" });
 		headerRow.createEl("th", { text: "Actions" });
 
 		// Table Body
@@ -82,7 +85,9 @@ export class TableRenderer {
 		const displayedApps = apps.slice(0, this.displayedLimit);
 
 		for (const app of displayedApps) {
-			const tr = tbody.createEl("tr");
+			const deadlineStatus = getDeadlineStatus(app.closingDate);
+			const tr = tbody.createEl("tr", { cls: `job-tracker-deadline-row deadline-${deadlineStatus}` });
+			const artefacts = this.view.plugin.appService.getApplicationArtefacts(app);
 
 			// Company
 			const tdCompany = tr.createEl("td", { cls: "job-tracker-td-company" });
@@ -119,48 +124,27 @@ export class TableRenderer {
 				}
 			};
 
-			// Applied Date
-			tr.createEl("td", { text: app.dateApplied || "-" });
+			const deadlineCell = tr.createEl("td", {
+				text: app.closingDate || "—",
+				cls: `job-tracker-deadline-cell deadline-${deadlineStatus}`,
+				attr: { "aria-label": app.closingDate ? `Closing date ${app.closingDate}: ${deadlineStatus}` : "No closing date" },
+			});
+			if (!app.closingDate) deadlineCell.addClass("text-muted");
 
-			// Location & Workplace Model
-			const tdLoc = tr.createEl("td");
-			if (app.location && app.workplaceType) {
-				tdLoc.createSpan({ text: `${app.location} (${app.workplaceType})` });
-			} else if (app.location) {
-				tdLoc.createSpan({ text: app.location });
-			} else if (app.workplaceType) {
-				tdLoc.createSpan({ text: app.workplaceType });
-			} else {
-				tdLoc.createSpan({ text: "-", cls: "text-muted" });
-			}
-
-			// Salary
-			tr.createEl("td", { text: app.salary || "-" });
-
-			// Source
-			tr.createEl("td", { text: app.source || "-" });
-
-			// Contacts
-			const tdContacts = tr.createEl("td");
-			if (app.contacts && app.contacts.length > 0) {
-				tdContacts.createSpan({
-					text: `${app.contacts.map((c) => c.name).join(", ")}`,
-					cls: "job-tracker-table-contacts-preview",
-				});
-			} else {
-				tdContacts.createSpan({ text: "-", cls: "text-muted" });
-			}
-
-			// Interviews
-			const tdInterviews = tr.createEl("td");
-			if (app.interviews && app.interviews.length > 0) {
-				tdInterviews.createSpan({
-					text: `${app.interviews.length} round(s)`,
-					cls: "job-tracker-table-interviews-badge",
-				});
-			} else {
-				tdInterviews.createSpan({ text: "-", cls: "text-muted" });
-			}
+			this.renderFolderCell(tr.createEl("td"), app);
+			this.renderArtefactCell(tr.createEl("td"), artefacts.filter((item) => item.type === "Job Description"), "JD");
+			this.renderArtefactCell(tr.createEl("td"), artefacts.filter((item) => item.type === "CV"), "CV");
+			this.renderArtefactCell(tr.createEl("td"), artefacts.filter((item) => item.type === "Cover Letter"), "Cover Letter");
+			this.renderArtefactCell(
+				tr.createEl("td"),
+				artefacts.filter((item) => item.type.endsWith("Notes") || (item.type === "General Notes" && item.filename.toLowerCase().endsWith(".md"))),
+				"Notes"
+			);
+			tr.createEl("td", {
+				text: `${artefacts.length}`,
+				cls: artefacts.some((item) => item.exists === false) ? "job-tracker-missing-reference" : "",
+				attr: { "aria-label": `${artefacts.length} artefacts${artefacts.some((item) => item.exists === false) ? ", missing file reference" : ""}` },
+			});
 
 			// Actions
 			const tdActions = tr.createEl("td", { cls: "job-tracker-td-actions" });
@@ -189,6 +173,68 @@ export class TableRenderer {
 				this.displayedLimit += 50;
 				this.view.renderContentOnly();
 			};
+		}
+	}
+
+	private renderFolderCell(container: HTMLElement, app: JobApplication): void {
+		const path = app.applicationFolderPath;
+		if (!path) {
+			container.createSpan({ text: "—", cls: "text-muted" });
+			return;
+		}
+		const folder = this.view.app.vault.getAbstractFileByPath(normalizePath(path));
+		if (!(folder instanceof TFolder)) {
+			container.createSpan({ text: "⚠ Missing folder", cls: "job-tracker-missing-reference", attr: { "aria-label": `Linked folder not found: ${path}` } });
+			return;
+		}
+		const link = container.createEl("button", {
+			text: `📁 ${folder.name || "Open folder"}`,
+			cls: "job-tracker-folder-link",
+			attr: { "aria-label": `Open linked application folder ${path}` },
+		});
+		link.onclick = () => {
+			const file = this.view.app.vault.getFiles().find((item) => item.path.startsWith(folder.path + "/"));
+			if (file) void this.view.openNote(file.path);
+			else new Notice(`The linked folder is empty: ${path}`);
+		};
+	}
+
+	private renderArtefactCell(container: HTMLElement, items: JobApplication["artefacts"], label: string): void {
+		if (items.length === 0) {
+			container.createSpan({ text: "—", cls: "text-muted" });
+			return;
+		}
+		const sorted = [...items].sort((a, b) =>
+			b.createdAt.localeCompare(a.createdAt) ||
+			b.updatedAt.localeCompare(a.updatedAt) ||
+			b.filename.localeCompare(a.filename)
+		);
+		const latest = sorted[0];
+		const button = container.createEl("button", {
+			text: `${items.some((item) => item.exists === false) ? "⚠ " : "✓ "}${label} (${items.length})`,
+			cls: items.some((item) => item.exists === false) ? "job-tracker-missing-reference" : "job-tracker-artefact-link",
+			attr: { "aria-label": `${items.length} ${label} artefact${items.length === 1 ? "" : " versions"}${items.some((item) => item.exists === false) ? ", missing file" : ""}` },
+		});
+		button.onclick = () => {
+			if (latest.exists === false) {
+				new Notice(`Linked file could not be found: ${latest.path}`);
+				return;
+			}
+			void this.view.openNote(latest.path);
+		};
+		if (items.length > 1) {
+			const details = container.createEl("details", { cls: "job-tracker-artefact-versions" });
+			details.createEl("summary", { text: `View all ${items.length}` });
+			for (const item of sorted) {
+				const version = details.createEl("button", {
+					text: `${item.filename}${item.exists === false ? " (missing)" : ""}`,
+					cls: item.exists === false ? "job-tracker-missing-reference" : "job-tracker-artefact-link",
+				});
+				version.onclick = () => {
+					if (item.exists === false) new Notice(`Linked file could not be found: ${item.path}`);
+					else void this.view.openNote(item.path);
+				};
+			}
 		}
 	}
 }

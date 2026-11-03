@@ -35,6 +35,78 @@
 	--job-status-ghosted-border: color-mix(in srgb, var(--job-status-ghosted) 30%, transparent);
 }
 
+.job-tracker-deadline-row.deadline-overdue {
+	background: color-mix(in srgb, var(--color-red, #e53e3e) 10%, transparent);
+}
+
+.job-tracker-deadline-row.deadline-within-7-days {
+	background: color-mix(in srgb, var(--color-orange, #dd6b20) 10%, transparent);
+}
+
+.job-tracker-deadline-row.deadline-within-14-days {
+	background: color-mix(in srgb, var(--color-yellow, #d69e2e) 10%, transparent);
+}
+
+.job-tracker-deadline-row.deadline-later {
+	background: color-mix(in srgb, var(--color-green, #38a169) 8%, transparent);
+}
+
+.job-tracker-deadline-row.deadline-none {
+	background: color-mix(in srgb, var(--text-muted) 5%, transparent);
+}
+
+.job-tracker-deadline-cell.deadline-overdue,
+.job-tracker-missing-reference {
+	color: var(--color-red, #e53e3e);
+	font-weight: 600;
+}
+
+.job-tracker-deadline-cell.deadline-within-7-days {
+	color: var(--color-orange, #dd6b20);
+	font-weight: 600;
+}
+
+.job-tracker-deadline-cell.deadline-within-14-days {
+	color: var(--color-yellow, #d69e2e);
+	font-weight: 600;
+}
+
+.job-tracker-deadline-cell.deadline-later {
+	color: var(--color-green, #38a169);
+}
+
+.job-tracker-folder-link,
+.job-tracker-artefact-link {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--text-accent);
+	text-align: left;
+	cursor: pointer;
+}
+
+.job-tracker-folder-link {
+	max-width: 220px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.job-tracker-artefact-versions {
+	margin-top: 3px;
+	font-size: 0.8em;
+}
+
+.job-tracker-artefact-versions summary {
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.job-tracker-artefact-versions button {
+	display: block;
+	margin-top: 3px;
+}
+
 .theme-light .job-tracker-view,
 .theme-light .job-tracker-modal {
 	--job-status-offer: #b45309;
@@ -1087,6 +1159,35 @@
 	font-size: 0.9em;
 	margin-top: 0;
 	margin-bottom: 16px;
+}
+
+.job-tracker-artefact-editor {
+	margin: 16px 0;
+	padding: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.job-tracker-artefact-editor h4 {
+	margin: 16px 0 6px;
+}
+
+.job-tracker-artefact-editor h4:first-child {
+	margin-top: 0;
+}
+
+.job-tracker-artefact-editor h5 {
+	margin: 12px 0 4px;
+	color: var(--text-muted);
+}
+
+.job-tracker-artefact-editor .setting-item {
+	padding: 8px 0;
+}
+
+.job-tracker-artefact-editor .setting-item-name {
+	overflow-wrap: anywhere;
 }
 
 .job-tracker-template-textarea {

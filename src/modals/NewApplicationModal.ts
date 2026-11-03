@@ -1,8 +1,9 @@
 import { App, ButtonComponent, Modal, Notice, Setting } from "obsidian";
 import JobApplicationTrackerPlugin from "../main";
-import { Contact, EmploymentType, JobStatus, WorkplaceType } from "../types";
+import { ApplicationArtefact, Contact, EmploymentType, JobStatus, WorkplaceType } from "../types";
 import { sanitizeEmail, sanitizeUrl } from "../services/ApplicationService";
 import { EMPLOYMENT_OPTIONS, WORKPLACE_OPTIONS } from "../constants";
+import { ArtefactEditor } from "./ArtefactEditor";
 
 /**
  * Modal for creating a new job application note with details and optional JD attachments.
@@ -21,6 +22,9 @@ export class NewApplicationModal extends Modal {
 	private jobUrl = "";
 	private source = "";
 	private followUpDate = "";
+	private closingDate = "";
+	private applicationFolderPath = "";
+	private artefacts: ApplicationArtefact[] = [];
 	private notes = "";
 	private recruiterName = "";
 	private recruiterEmail = "";
@@ -179,6 +183,16 @@ export class NewApplicationModal extends Modal {
 				});
 			});
 
+		new Setting(contentEl)
+			.setName("Closing Date")
+			.setDesc("Application deadline (used for dashboard reminders)")
+			.addText((text) => {
+				text.inputEl.type = "date";
+				text.setValue(this.closingDate).onChange((value) => {
+					this.closingDate = value;
+				});
+			});
+
 		// Recruiter Name & Email
 		contentEl.createEl("h3", { text: "Contact Information" });
 		new Setting(contentEl)
@@ -214,26 +228,16 @@ export class NewApplicationModal extends Modal {
 				text.inputEl.rows = 3;
 			});
 
-		// Job Description Attachment
-		let uploadedFile: File | null = null;
-		let existingVaultPath = "";
-
-		new Setting(contentEl)
-			.setName("Attach Job Description File")
-			.setDesc("Upload a PDF, Markdown, or text file")
-			.then((setting) => {
-				const input = setting.controlEl.createEl("input", {
-					type: "file",
-					cls: "job-tracker-file-input",
-					attr: { accept: ".pdf,.md,.txt" },
-				});
-				input.onchange = () => {
-					if (input.files && input.files[0]) {
-						uploadedFile = input.files[0];
-						new Notice(`Attached file: ${uploadedFile.name}`);
-					}
-				};
-			});
+		const artefactContainer = contentEl.createDiv({ cls: "job-tracker-artefact-editor" });
+		new ArtefactEditor(
+			this.app,
+			this.plugin,
+			{ applicationFolderPath: this.applicationFolderPath, artefacts: this.artefacts },
+			(value) => {
+				this.applicationFolderPath = value.applicationFolderPath;
+				this.artefacts = value.artefacts;
+			}
+		).render(artefactContainer);
 
 		// Or paste plain text JD
 		let jobDescriptionText = "";
@@ -259,7 +263,7 @@ export class NewApplicationModal extends Modal {
 					.onClick(async () => {
 						submitBtn.setDisabled(true);
 						try {
-							await this.handleSubmit(uploadedFile, existingVaultPath, jobDescriptionText);
+							await this.handleSubmit(jobDescriptionText);
 						} finally {
 							submitBtn.setDisabled(false);
 						}
@@ -272,11 +276,7 @@ export class NewApplicationModal extends Modal {
 			);
 	}
 
-	private async handleSubmit(
-		uploadedFile: File | null,
-		existingVaultPath: string,
-		jobDescriptionText: string
-	): Promise<void> {
+	private async handleSubmit(jobDescriptionText: string): Promise<void> {
 		if (!this.company.trim()) {
 			new Notice("Please enter a company name.");
 			this.companyInputEl?.focus();
@@ -295,6 +295,10 @@ export class NewApplicationModal extends Modal {
 			new Notice("Please select a valid date for Follow-up Date.");
 			return;
 		}
+		if (this.closingDate.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(this.closingDate.trim())) {
+			new Notice("Please select a valid date for Closing Date.");
+			return;
+		}
 		if (this.recruiterEmail.trim() && !sanitizeEmail(this.recruiterEmail.trim())) {
 			new Notice("Please enter a valid email address for the contact.");
 			return;
@@ -305,15 +309,6 @@ export class NewApplicationModal extends Modal {
 		}
 
 		try {
-			let attachmentPath = existingVaultPath || "";
-			if (uploadedFile) {
-				const savedFile = await this.plugin.appService.saveAttachment(
-					uploadedFile,
-					`${this.company.trim()} - ${this.role.trim()}`
-				);
-				attachmentPath = savedFile.path;
-			}
-
 			const contacts: Contact[] = [];
 			if (this.recruiterName.trim()) {
 				contacts.push({
@@ -336,9 +331,12 @@ export class NewApplicationModal extends Modal {
 				jobUrl: this.jobUrl.trim(),
 				source: this.source.trim(),
 				followUpDate: this.followUpDate.trim() || undefined,
+				closingDate: this.closingDate.trim() || undefined,
+				applicationFolderPath: this.applicationFolderPath.trim() || undefined,
 				notes: this.notes.trim(),
 				jobDescription: jobDescriptionText.trim() || undefined,
-				jobDescriptionFile: attachmentPath || undefined,
+				artefacts: this.artefacts,
+				jobDescriptionFile: this.artefacts.find((artefact) => artefact.type === "Job Description")?.path,
 				contacts: contacts,
 			});
 

@@ -1,4 +1,4 @@
-import { App, Notice, Setting, TFile, setIcon } from "obsidian";
+import { App, Notice, normalizePath, Setting, TFile, TFolder, setIcon } from "obsidian";
 import JobApplicationTrackerPlugin from "../main";
 import { JobApplication } from "../types";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
@@ -144,22 +144,7 @@ export class ManageApplicationModal extends BaseApplicationModal {
 				})
 			);
 
-		if (this.application.jobDescriptionFile) {
-			new Setting(container)
-				.setName("Attached Job Description")
-				.setDesc(this.application.jobDescriptionFile)
-				.addButton((btn) =>
-					btn.setButtonText("Open Attachment").onClick(async () => {
-						const file = this.plugin.appService.resolveFile(this.application!.jobDescriptionFile!);
-						if (file instanceof TFile) {
-							const leaf = this.app.workspace.getLeaf("tab");
-							await leaf.openFile(file);
-						} else {
-							new Notice("Attachment file could not be found.");
-						}
-					})
-				);
-		}
+		this.renderArtefactOverview(container);
 
 		new Setting(container)
 			.setName("Delete Application")
@@ -188,6 +173,72 @@ export class ManageApplicationModal extends BaseApplicationModal {
 						).open();
 					})
 			);
+	}
+
+	private renderArtefactOverview(container: HTMLElement): void {
+		if (!this.application) return;
+		container.createEl("h3", { text: "Application Files" });
+
+		const folderPath = this.application.applicationFolderPath;
+		if (folderPath) {
+			const folder = this.app.vault.getAbstractFileByPath(normalizePath(folderPath));
+			const folderSetting = new Setting(container)
+				.setName("Artefact Folder")
+				.setDesc(folder instanceof TFolder ? folder.name || "Vault root" : "Folder not found");
+			if (folder instanceof TFolder) {
+				folderSetting.addButton((button) =>
+					button.setButtonText("Open Folder").onClick(async () => {
+						const file = this.app.vault.getFiles().find((item) => item.path.startsWith(folder.path + "/"));
+						if (!file) {
+							new Notice("The linked folder is empty.");
+							return;
+						}
+						await this.app.workspace.getLeaf("tab").openFile(file);
+						const explorerLeaf = this.app.workspace.getLeavesOfType("file-explorer")[0];
+						if (explorerLeaf) await this.app.workspace.revealLeaf(explorerLeaf);
+					})
+				);
+			} else {
+				folderSetting.setClass("job-tracker-missing-reference");
+			}
+		}
+
+		const artefacts = this.plugin.appService.getApplicationArtefacts(this.application);
+		const groups: { title: string; matches: (type: string) => boolean }[] = [
+			{ title: "Job Description", matches: (type) => type === "Job Description" },
+			{ title: "CVs", matches: (type) => type === "CV" },
+			{ title: "Cover Letters", matches: (type) => type === "Cover Letter" },
+			{ title: "Interview Notes", matches: (type) => ["Interview Notes", "Recruiter Notes", "Follow-up Notes", "General Notes"].includes(type) },
+			{ title: "Other Artefacts", matches: (type) => !["Job Description", "CV", "Cover Letter", "Interview Notes", "Recruiter Notes", "Follow-up Notes", "General Notes"].includes(type) },
+		];
+
+		for (const group of groups) {
+			const items = artefacts.filter((artefact) => group.matches(artefact.type));
+			if (items.length === 0) continue;
+			container.createEl("h4", { text: `${group.title} (${items.length})` });
+			for (const artefact of items) {
+				const file = this.plugin.appService.resolveFile(artefact.path);
+				const setting = new Setting(container)
+					.setName(artefact.filename)
+					.setDesc(file instanceof TFile ? "" : "File not found");
+				if (!(file instanceof TFile)) {
+					setting.setClass("job-tracker-missing-reference");
+					continue;
+				}
+				setting.addButton((button) =>
+					button.setButtonText("Open").onClick(() => {
+						void this.app.workspace.getLeaf("tab").openFile(file);
+					})
+				);
+				setting.addButton((button) =>
+					button.setButtonText("Reveal in Vault").onClick(async () => {
+						await this.app.workspace.getLeaf("tab").openFile(file);
+						const explorerLeaf = this.app.workspace.getLeavesOfType("file-explorer")[0];
+						if (explorerLeaf) await this.app.workspace.revealLeaf(explorerLeaf);
+					})
+				);
+			}
+		}
 	}
 
 	private renderContactsTab(container: HTMLElement): void {
