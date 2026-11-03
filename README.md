@@ -1,9 +1,17 @@
-# Job Application Tracker
+<div align="center">
+  <img width="100" height="100" alt="obsidian-job-application-tracker-plugin" src="https://github.com/user-attachments/assets/262f8924-47ba-4e8a-aa38-161a360fd80a" />
 
-An all-in-one job application pipeline and career search command center for [Obsidian](https://obsidian.md). Track applications across customizable stages, manage key contacts and recruiters, schedule multi-round interview pipelines, link existing files and folders as application artefacts, track closing dates and follow-ups, and visualize your search pipeline with Kanban, Table, List, and Metrics views.
+  # Job Application Tracker | Obsidian Plugin
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Obsidian](https://img.shields.io/badge/Obsidian-v1.7.2%2B-purple.svg)
+  An all-in-one job application pipeline and career search command center for [Obsidian](https://obsidian.md). Track applications across customizable stages, manage key contacts and recruiters, schedule multi-round interview pipelines, link existing files and folders as application artefacts, track closing dates and follow-ups, and visualize your search pipeline with Kanban, Table, List, and Metrics views.
+  
+  ~✦~
+  
+  ![License](https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge)
+  ![Obsidian](https://img.shields.io/badge/Obsidian-%23483699.svg?style=for-the-badge&logo=obsidian&logoColor=white)
+  ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=fff)
+  
+</div>
 
 ---
 
