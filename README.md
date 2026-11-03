@@ -20,11 +20,11 @@
 ### 📊 Visual Dashboard with 6 View Modes
 
 - **Kanban Board**: Drag-and-drop cards across pipeline stage columns (*Wishlist* ➔ *Applied* ➔ *Screening* ➔ *Interviewing* ➔ *Offer* ➔ *Accepted* / *Rejected* / *Withdrawn* / *Ghosted*). Moving cards instantly updates note frontmatter and logs timestamped status activity.
-- **Table View**: Company, Role, Status, Closing Date, Folder, Job Description, CV versions, Cover Letter versions, Notes, and artefact counts. Sort by closing date, filter by deadline, and open linked files directly without exposing raw paths.
+- **Table View**: Defaults to JD, Role, Company, Date Posted, Status, URL, Location, and Tags. Closing Date, Folder, CV versions, Cover Letter versions, Notes, and artefact counts can be restored in Table View Settings. Sort from a column header's context menu and open linked files without exposing raw paths.
 - **List View**: Compact card layout highlighting workplace type, compensation, follow-up deadlines, and next scheduled interviews.
-- **Gallery View**: Status-accented cards for company, role, location, and closing date.
+- **Gallery View**: Status-accented cards for company, role, location, and closing date (Applied blue, Interviewing yellow, Offer green, Rejected red, Withdrawn grey).
 - **Company View**: Group the filtered applications by company, with counts and status breakdowns. It uses shared search/filters and has no separate sort control.
-- **Details pane**: Select an application to see its complete metadata and open linked artefacts.
+- **Details pane**: Select an application to see its metadata, including Date Posted, and open linked artefacts.
 - **Saved Views**: Save the current view mode, filters, and sort direction for quick reuse.
 - **Metrics & Conversion Analytics**:
   - **Sankey Pipeline Diagram**: Pure native SVG vector Sankey diagram charting the flow from application sources through screening and interview stages to final outcomes (zero external dependencies, zero permission prompts).
@@ -74,8 +74,8 @@
 
 ### 🔍 Live Search, Filtering & Follow-ups
 
-- Search across company names, roles, locations, workplace types, sources, compensation, and contact names with instant, debounced results.
-- Filter by application stage and closing-date state. Closing dates are highlighted as overdue, due within 7 days, due within 14 days, later, or unspecified.
+- Search across company names, roles, locations, workplace types, sources, compensation, artefact filenames, and contact names with instant, debounced results.
+- Filter by status, company, tags, location, and closing-date state. Closing dates are highlighted as overdue, due within 7 days, due within 14 days, later, or unspecified.
 - Sort the table by closing date; deadline coloring refreshes periodically while the dashboard is open.
 
 ### ♿ Accessibility & Mobile Support
@@ -99,11 +99,32 @@ For development, run `npm run dev` and load the same plugin folder in a test vau
 
 ### Application and artefact workflow
 
-1. Choose **Add Application**, enter the company and role, and select any configured tags.
-2. The plugin creates a `{Company - Role}` folder under the configured Applications Folder and stores the application Markdown note there.
-3. Use the Job Description or Artefacts controls to open the native file chooser. Select a type for generic artefacts; repeat to add multiple CVs, cover letters, or notes.
-4. Link a folder when the application has a dedicated artefact directory. Vault contents refresh on Obsidian file events; use the dashboard Refresh action after external changes.
-5. In Settings, configure tag options and whether to move vault artefacts into each new application folder. The default is enabled; external files are never moved.
+1. Choose **Add Application**. First browse to a PDF, TXT, or Markdown Job Description, or paste its text.
+2. Enter company, role, Date Posted (defaults to today), status, Closing Date, location, tags, and any other available details. Date Applied and Follow Up Date appear only when Status is Applied.
+3. Add supporting artefacts by choosing a type and selecting a file. Repeat to link multiple CVs, cover letters, interview notes, contracts, portfolios, or other artefacts.
+4. Review the details. The plugin creates a role-first `{Role - Company}` folder and writes `Application.md` plus a pasted `Job Description.md` (if text was chosen).
+5. In Settings, configure tag options and whether to move linked vault files into each new application folder. The default is enabled; external files are never moved. Renamed or moved vault links are reconciled automatically.
+
+Example vault layout:
+
+```text
+Applications/
+└── Software Engineer - Datacom/
+    ├── Application.md
+    ├── JD.pdf
+    ├── CV - 2026-10-15.docx
+    ├── CV - 2026-11-03.docx
+    ├── Cover Letter.docx
+    └── Interview Notes.md
+```
+
+### Views and navigation
+
+- **Table**: Right-click a visible column header to hide it or sort ascending/descending. Restore individual hidden columns in **Settings → Table View Settings** or restore all from the table.
+- **Gallery**: Browse status-coloured cards showing Company, Role, Location, and Closing Date.
+- **Company**: Group the current filtered applications by company, with application totals and status breakdowns. There is no separate company sort control.
+- **Details pane**: Select an application row/card to see metadata, open its folder, and navigate to linked artefacts.
+- **Saved views**: Choose Table, Gallery, or Company, apply the shared search/filters, then select **Save view** to preserve the view mode, filters, and sort state.
 
 The native chooser is an Electron desktop capability. The implementation uses the browser's native file/directory input, then reads Electron's exposed absolute file path when available. On mobile/web or builds that hide the absolute path, users can still select files and folders inside the vault via Obsidian's fuzzy selector. An empty external folder may not be selectable through the browser directory chooser; select a non-empty folder or link it from the vault.
 
@@ -157,7 +178,7 @@ Under **Settings** ➔ **Job Application Tracker**, you can configure:
 
 ### Existing architecture and gaps
 
-Applications are Markdown notes discovered by `ApplicationService` from the configured tracker folder. YAML frontmatter is the persisted source for status, contacts, interviews, and artefact references. `JobTrackerView` coordinates the Kanban, Table, List, Metrics, Gallery, and Company renderers. Legacy upload helpers and settings remain for compatibility, but current workflows link files instead of storing binaries in the plugin.
+Applications are Markdown notes discovered by `ApplicationService` from the configured tracker folder; explicitly typed application notes continue to be discovered if moved elsewhere in the vault. YAML frontmatter is the persisted source for status, contacts, interviews, and artefact references. `JobTrackerView` coordinates the Kanban, Table, List, Metrics, Gallery, and Company renderers. Legacy upload helpers and settings remain for compatibility, but current workflows link files instead of storing binaries in the plugin.
 
 ### Proposed data model
 
