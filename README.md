@@ -23,7 +23,7 @@
 - **Table View**: Company, Role, Status, Closing Date, Folder, Job Description, CV versions, Cover Letter versions, Notes, and artefact counts. Sort by closing date, filter by deadline, and open linked files directly without exposing raw paths.
 - **List View**: Compact card layout highlighting workplace type, compensation, follow-up deadlines, and next scheduled interviews.
 - **Gallery View**: Status-accented cards for company, role, location, and closing date.
-- **Company View**: Group applications by company, with counts and status breakdowns; search and filters apply here too.
+- **Company View**: Group the filtered applications by company, with counts and status breakdowns. It uses shared search/filters and has no separate sort control.
 - **Details pane**: Select an application to see its complete metadata and open linked artefacts.
 - **Saved Views**: Save the current view mode, filters, and sort direction for quick reuse.
 - **Metrics & Conversion Analytics**:
