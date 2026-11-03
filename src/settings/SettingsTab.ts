@@ -64,7 +64,7 @@ export class JobApplicationTrackerSettingTab extends PluginSettingTab {
 						render: (setting: Setting) => {
 							setting.addText((text) =>
 								text
-									.setPlaceholder("Job Applications")
+									.setPlaceholder("Applications")
 									.setValue(this.plugin.settings.trackerFolderPath)
 									.onChange((value) => {
 										this.plugin.settings.trackerFolderPath = this.sanitizeFolderPath(
@@ -82,7 +82,7 @@ export class JobApplicationTrackerSettingTab extends PluginSettingTab {
 						render: (setting: Setting) => {
 							setting.addText((text) =>
 								text
-									.setPlaceholder("Job Applications/Interviews")
+									.setPlaceholder("Applications/Interviews")
 									.setValue(this.plugin.settings.interviewNotesFolderPath)
 									.onChange((value) => {
 										this.plugin.settings.interviewNotesFolderPath = this.sanitizeFolderPath(
@@ -100,8 +100,8 @@ export class JobApplicationTrackerSettingTab extends PluginSettingTab {
 						render: (setting: Setting) => {
 							setting.addText((text) =>
 								text
-									.setPlaceholder("Job Applications/Attachments")
-									.setValue(this.plugin.settings.attachmentsFolderPath || "Job Applications/Attachments")
+									.setPlaceholder("Applications/Attachments")
+									.setValue(this.plugin.settings.attachmentsFolderPath || "Applications/Attachments")
 									.onChange((value) => {
 										this.plugin.settings.attachmentsFolderPath = this.sanitizeFolderPath(
 											value,
@@ -118,6 +118,82 @@ export class JobApplicationTrackerSettingTab extends PluginSettingTab {
 				type: "group",
 				heading: "Display & Pipeline Defaults",
 				items: [
+					{
+						name: "Automatically move artefacts into application folder",
+						desc: "Moves linked files already inside this vault into the new application folder. Files outside the vault are left in place.",
+						render: (setting: Setting) => {
+							setting.addToggle((toggle) =>
+								toggle.setValue(this.plugin.settings.autoMoveArtefacts).onChange(async (value) => {
+									this.plugin.settings.autoMoveArtefacts = value;
+									await this.plugin.saveSettings();
+								})
+							);
+						},
+					},
+					{
+						name: "Application tags",
+						desc: "Manage the tag options shown in application forms.",
+						render: (setting: Setting) => {
+							const tagsContainer = setting.controlEl.createDiv({ cls: "job-tracker-tag-settings" });
+							const renderTags = () => {
+								tagsContainer.empty();
+								this.plugin.settings.applicationTagOptions.forEach((tag, index) => {
+									const row = new Setting(tagsContainer);
+									row.addText((text) => {
+										text.setValue(tag).onChange((value) => {
+											const next = value.trim();
+											if (!next) return;
+											this.plugin.settings.applicationTagOptions[index] = next;
+											this.debouncedSave();
+										});
+									});
+									row.addButton((button) => button.setIcon("arrow-up").setTooltip("Move up").setDisabled(index === 0).onClick(async () => {
+										const options = this.plugin.settings.applicationTagOptions;
+										[options[index - 1], options[index]] = [options[index], options[index - 1]];
+										await this.plugin.saveSettings();
+										renderTags();
+									}));
+									row.addButton((button) => button.setIcon("arrow-down").setTooltip("Move down").setDisabled(index === this.plugin.settings.applicationTagOptions.length - 1).onClick(async () => {
+										const options = this.plugin.settings.applicationTagOptions;
+										[options[index], options[index + 1]] = [options[index + 1], options[index]];
+										await this.plugin.saveSettings();
+										renderTags();
+									}));
+									row.addButton((button) => button.setIcon("trash").setTooltip("Delete tag").onClick(async () => {
+										this.plugin.settings.applicationTagOptions.splice(index, 1);
+										await this.plugin.saveSettings();
+										renderTags();
+									}));
+								});
+								let newTag = "";
+								new Setting(tagsContainer)
+									.setName("Add tag")
+									.addText((text) => text.setPlaceholder("e.g. Java").onChange((value) => {
+										newTag = value.trim();
+									}))
+									.addButton((button) => button.setButtonText("Add").setCta().onClick(async () => {
+										if (!newTag || this.plugin.settings.applicationTagOptions.includes(newTag)) return;
+										this.plugin.settings.applicationTagOptions.push(newTag);
+										await this.plugin.saveSettings();
+										renderTags();
+									}));
+							};
+							renderTags();
+						},
+					},
+					{
+						name: "Hidden table columns",
+						desc: "Restore every table attribute to its default visible state.",
+						render: (setting: Setting) => {
+							setting.addButton((button) => button
+								.setButtonText("Restore all columns")
+								.setDisabled(this.plugin.settings.hiddenTableColumns.length === 0)
+								.onClick(async () => {
+									this.plugin.settings.hiddenTableColumns = [];
+									await this.plugin.saveSettings();
+								}));
+						},
+					},
 					{
 						name: "Default View Location",
 						desc: "Where to open the Job Application Tracker dashboard when clicking the ribbon icon or command.",

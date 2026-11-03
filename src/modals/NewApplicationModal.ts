@@ -28,6 +28,7 @@ export class NewApplicationModal extends Modal {
 	private notes = "";
 	private recruiterName = "";
 	private recruiterEmail = "";
+	private tags: string[] = [];
 
 	private companyInputEl: HTMLInputElement | null = null;
 	private roleInputEl: HTMLInputElement | null = null;
@@ -71,6 +72,7 @@ export class NewApplicationModal extends Modal {
 				});
 			});
 
+		const appliedFieldSettings: HTMLElement[] = [];
 		// Status
 		new Setting(contentEl)
 			.setName("Status")
@@ -82,11 +84,14 @@ export class NewApplicationModal extends Modal {
 				dropdown.setValue(this.status);
 				dropdown.onChange((value) => {
 					this.status = value;
+					for (const setting of appliedFieldSettings) {
+						setting.toggleClass("job-tracker-is-hidden", this.status !== "Applied");
+					}
 				});
 			});
 
 		// Date Applied
-		new Setting(contentEl)
+		const dateAppliedSetting = new Setting(contentEl)
 			.setName("Date Applied")
 			.setDesc("Date when the application was submitted")
 			.addText((text) => {
@@ -95,6 +100,7 @@ export class NewApplicationModal extends Modal {
 					this.dateApplied = value;
 				});
 			});
+		appliedFieldSettings.push(dateAppliedSetting.settingEl);
 
 		// Location
 		new Setting(contentEl)
@@ -173,7 +179,7 @@ export class NewApplicationModal extends Modal {
 			});
 
 		// Follow-up Date
-		new Setting(contentEl)
+		const followUpSetting = new Setting(contentEl)
 			.setName("Follow-up Date")
 			.setDesc("Optional reminder or deadline date")
 			.addText((text) => {
@@ -182,6 +188,10 @@ export class NewApplicationModal extends Modal {
 					this.followUpDate = value;
 				});
 			});
+		appliedFieldSettings.push(followUpSetting.settingEl);
+		for (const setting of appliedFieldSettings) {
+				setting.toggleClass("job-tracker-is-hidden", this.status !== "Applied");
+		}
 
 		new Setting(contentEl)
 			.setName("Closing Date")
@@ -192,6 +202,10 @@ export class NewApplicationModal extends Modal {
 					this.closingDate = value;
 				});
 			});
+
+		contentEl.createEl("h3", { text: "Tags" });
+		const tagContainer = contentEl.createDiv({ cls: "job-tracker-tag-selector" });
+		this.renderTagOptions(tagContainer);
 
 		// Recruiter Name & Email
 		contentEl.createEl("h3", { text: "Contact Information" });
@@ -276,6 +290,25 @@ export class NewApplicationModal extends Modal {
 			);
 	}
 
+	private renderTagOptions(container: HTMLElement): void {
+		container.empty();
+		for (const tag of this.plugin.settings.applicationTagOptions) {
+			const selected = this.tags.includes(tag);
+			const button = container.createEl("button", {
+				text: tag,
+				cls: `job-tracker-tag-option ${selected ? "is-selected" : ""}`,
+				attr: { type: "button", "aria-pressed": String(selected) },
+			});
+			button.onclick = () => {
+				this.tags = selected ? this.tags.filter((item) => item !== tag) : [...this.tags, tag];
+				this.renderTagOptions(container);
+			};
+		}
+		if (this.plugin.settings.applicationTagOptions.length === 0) {
+			container.createEl("p", { text: "Add tag options in plugin settings.", cls: "text-muted" });
+		}
+	}
+
 	private async handleSubmit(jobDescriptionText: string): Promise<void> {
 		if (!this.company.trim()) {
 			new Notice("Please enter a company name.");
@@ -338,6 +371,7 @@ export class NewApplicationModal extends Modal {
 				artefacts: this.artefacts,
 				jobDescriptionFile: this.artefacts.find((artefact) => artefact.type === "Job Description")?.path,
 				contacts: contacts,
+				tags: this.tags,
 			});
 
 			this.close();

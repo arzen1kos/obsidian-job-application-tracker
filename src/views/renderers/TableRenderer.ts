@@ -1,5 +1,5 @@
-import { Notice, normalizePath, setIcon, TFolder } from "obsidian";
-import { getDeadlineStatus, JobApplication, JobSortField } from "../../types";
+import { Menu, Notice, normalizePath, setIcon, TFolder } from "obsidian";
+import { getDeadlineStatus, JobApplication, JobSortField, isAbsoluteFilePath } from "../../types";
 import { getStatusClassName } from "../../constants";
 import { UpdateStatusModal } from "../../modals/UpdateStatusModal";
 import { JobTrackerView } from "../JobTrackerView";
@@ -33,17 +33,17 @@ export class TableRenderer {
 		const thead = table.createEl("thead");
 		const headerRow = thead.createEl("tr");
 
-		const columns: { label: string; field?: JobSortField }[] = [
-			{ label: "Company", field: "company" },
-			{ label: "Role", field: "role" },
-			{ label: "Status", field: "status" },
-			{ label: "Closing Date", field: "closingDate" },
-			{ label: "Folder" },
-			{ label: "JD" },
-			{ label: "CVs" },
-			{ label: "Cover Letters" },
-			{ label: "Notes" },
-			{ label: "Artefacts" },
+		const columns: { key: string; label: string; field?: JobSortField }[] = [
+			{ key: "company", label: "Company", field: "company" },
+			{ key: "role", label: "Role", field: "role" },
+			{ key: "status", label: "Status", field: "status" },
+			{ key: "closingDate", label: "Closing Date", field: "closingDate" },
+			{ key: "folder", label: "Folder", field: "folder" },
+			{ key: "jobDescription", label: "JD", field: "jobDescription" },
+			{ key: "cvs", label: "CVs", field: "cvs" },
+			{ key: "coverLetters", label: "Cover Letters", field: "coverLetters" },
+			{ key: "notes", label: "Notes", field: "notes" },
+			{ key: "artefacts", label: "Artefacts", field: "artefacts" },
 		];
 
 		for (const col of columns) {
@@ -53,6 +53,7 @@ export class TableRenderer {
 				cls: col.field ? "job-tracker-sortable-th" : "",
 				attr: col.field ? { role: "columnheader", "aria-sort": ariaSort, tabindex: "0" } : { role: "columnheader" },
 			});
+			th.hidden = this.view.plugin.settings.hiddenTableColumns.includes(col.key);
 			th.createSpan({ text: col.label });
 			if (isSorted) {
 				const sortIcon = th.createSpan({ cls: "job-tracker-sort-indicator" });
@@ -76,9 +77,48 @@ export class TableRenderer {
 					handleSort();
 				}
 			};
+			th.oncontextmenu = (event) => {
+				event.preventDefault();
+				const menu = new Menu();
+				menu.addItem((item) => item
+					.setTitle("Hide this attribute")
+					.setIcon("eye-off")
+					.onClick(() => {
+						if (!this.view.plugin.settings.hiddenTableColumns.includes(col.key)) {
+							this.view.plugin.settings.hiddenTableColumns.push(col.key);
+							void this.view.plugin.saveSettings();
+						}
+						this.view.renderContentOnly();
+					}));
+				if (col.field) {
+					menu.addSeparator();
+					menu.addItem((item) => item.setTitle("Sort ascending").setIcon("arrow-up").onClick(() => {
+						this.view.sortField = col.field!;
+						this.view.sortAscending = true;
+						this.view.renderContentOnly();
+					}));
+					menu.addItem((item) => item.setTitle("Sort descending").setIcon("arrow-down").onClick(() => {
+						this.view.sortField = col.field!;
+						this.view.sortAscending = false;
+						this.view.renderContentOnly();
+					}));
+				}
+				menu.showAtMouseEvent(event);
+			};
 		}
 
 		headerRow.createEl("th", { text: "Actions" });
+		if (this.view.plugin.settings.hiddenTableColumns.length > 0) {
+			const restoreButton = tableWrapper.createEl("button", {
+				text: "Restore columns",
+				cls: "job-tracker-restore-columns",
+			});
+			restoreButton.onclick = () => {
+				this.view.plugin.settings.hiddenTableColumns = [];
+				void this.view.plugin.saveSettings();
+				this.view.renderContentOnly();
+			};
+		}
 
 		// Table Body
 		const tbody = table.createEl("tbody");
@@ -87,6 +127,10 @@ export class TableRenderer {
 		for (const app of displayedApps) {
 			const deadlineStatus = getDeadlineStatus(app.closingDate);
 			const tr = tbody.createEl("tr", { cls: `job-tracker-deadline-row deadline-${deadlineStatus}` });
+			tr.onclick = () => {
+				this.view.selectedApplication = app;
+				this.view.renderContentOnly();
+			};
 			const artefacts = this.view.plugin.appService.getApplicationArtefacts(app);
 
 			// Company
@@ -154,8 +198,17 @@ export class TableRenderer {
 			});
 			setIcon(actionMenuBtn, "more-horizontal");
 			actionMenuBtn.onclick = (e) => {
+				e.stopPropagation();
 				this.view.showCardMenu(e, app);
 			};
+			for (const [index, column] of columns.entries()) {
+				if (this.view.plugin.settings.hiddenTableColumns.includes(column.key)) {
+					if (headerRow.children.item(index) instanceof HTMLElement) {
+						(headerRow.children.item(index) as HTMLElement).hidden = true;
+					}
+					(tr.children.item(index) as HTMLElement).hidden = true;
+				}
+			}
 		}
 
 		if (apps.length > this.displayedLimit) {
@@ -180,6 +233,21 @@ export class TableRenderer {
 		const path = app.applicationFolderPath;
 		if (!path) {
 			container.createSpan({ text: "—", cls: "text-muted" });
+			return;
+		}
+		if (isAbsoluteFilePath(path)) {
+			try {
+				if (!require("fs").statSync(path).isDirectory()) throw new Error("not a folder");
+			} catch {
+				container.createSpan({ text: "⚠ Missing folder", cls: "job-tracker-missing-reference" });
+				return;
+			}
+			const link = container.createEl("button", {
+				text: `📁 ${path.split(/[\\/]/).filter(Boolean).pop() || "Open folder"}`,
+				cls: "job-tracker-folder-link",
+				attr: { "aria-label": "Open linked application folder outside the vault" },
+			});
+			link.onclick = () => { void this.view.openNote(path); };
 			return;
 		}
 		const folder = this.view.app.vault.getAbstractFileByPath(normalizePath(path));
