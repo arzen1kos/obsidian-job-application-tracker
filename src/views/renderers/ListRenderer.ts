@@ -31,8 +31,19 @@ export class ListRenderer {
 		for (const app of displayedApps) {
 			const item = listContainer.createDiv({
 				cls: "job-tracker-list-item",
-				attr: { role: "article", "aria-label": `${app.company} - ${app.role}` },
+				attr: { role: "article", tabindex: "0", "aria-label": `${app.company} - ${app.role}` },
 			});
+			item.onclick = () => {
+				this.view.selectedApplication = app;
+				this.view.renderContentOnly();
+			};
+			item.onkeydown = (event) => {
+				if ((event.key === "Enter" || event.key === " ") && event.target === item) {
+					event.preventDefault();
+					this.view.selectedApplication = app;
+					this.view.renderContentOnly();
+				}
+			};
 
 			const mainInfo = item.createDiv({ cls: "job-tracker-list-main" });
 			const titleRow = mainInfo.createDiv({ cls: "job-tracker-list-title-row" });

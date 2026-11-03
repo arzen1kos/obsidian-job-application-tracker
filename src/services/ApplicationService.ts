@@ -1,5 +1,5 @@
 import { App, Notice, TFile, TFolder, normalizePath, stringifyYaml } from "obsidian";
-import { ApplicationArtefact, ARTEFACT_TYPES, ArtefactType, Contact, EmploymentType, InterviewRound, InterviewRoundType, JobApplication, JobApplicationFrontMatter, JobStatus, StatusHistoryEntry, WorkplaceType, isFinalStatus } from "../types";
+import { ApplicationArtefact, ARTEFACT_TYPES, ArtefactType, Contact, EmploymentType, InterviewRound, InterviewRoundType, JobApplication, JobApplicationFrontMatter, JobStatus, StatusHistoryEntry, WorkplaceType, isAbsoluteFilePath, isFinalStatus } from "../types";
 import JobApplicationTrackerPlugin from "../main";
 
 /**
@@ -62,6 +62,10 @@ export class ApplicationService {
 	private cachedApplications: JobApplication[] | null = null;
 	private cachedArtefacts = new Map<string, ApplicationArtefact[]>();
 
+	private normalizeStoredPath(path: string): string {
+		return isAbsoluteFilePath(path) ? path : normalizePath(path);
+	}
+
 	invalidateCache(): void {
 		this.cachedApplications = null;
 		this.cachedArtefacts.clear();
@@ -97,6 +101,7 @@ export class ApplicationService {
 		if (fields.jobDescriptionFile !== undefined) fm.jobDescriptionFile = fields.jobDescriptionFile;
 		if (fields.contacts !== undefined) fm.contacts = fields.contacts;
 		if (fields.interviews !== undefined) fm.interviews = fields.interviews;
+		if (fields.tags !== undefined) fm.tags = fields.tags;
 	}
 
 	constructor(app: App, plugin: JobApplicationTrackerPlugin) {
@@ -137,6 +142,7 @@ export class ApplicationService {
 	 */
 	resolveFile(pathOrLink: string): TFile | null {
 		if (!pathOrLink) return null;
+		if (isAbsoluteFilePath(pathOrLink)) return null;
 		const normalized = normalizePath(pathOrLink);
 		const file = this.app.vault.getAbstractFileByPath(normalized);
 		if (file instanceof TFile) {
@@ -223,7 +229,7 @@ export class ApplicationService {
 		const artefacts: ApplicationArtefact[] = [];
 		for (const line of value.split(/\r?\n/)) {
 			const [rawType, ...pathParts] = line.split("|");
-			const path = normalizePath((pathParts.length ? pathParts.join("|") : rawType).trim());
+			const path = this.normalizeStoredPath((pathParts.length ? pathParts.join("|") : rawType).trim());
 			if (!path) continue;
 			const requestedType = pathParts.length ? rawType.trim() : "";
 			const type = ARTEFACT_TYPES.find((item) => item.toLowerCase() === requestedType.toLowerCase())
@@ -233,7 +239,7 @@ export class ApplicationService {
 				id: previous?.id || crypto.randomUUID(),
 				type,
 				path,
-				filename: path.split("/").pop() || path,
+				filename: path.split(/[\\/]/).pop() || path,
 				createdAt: previous?.createdAt || now,
 				updatedAt: previous?.updatedAt || now,
 			});
@@ -263,7 +269,7 @@ export class ApplicationService {
 	}
 
 	private inferArtefactType(path: string): ArtefactType {
-		const name = path.split("/").pop()?.toLowerCase() || "";
+		const name = path.split(/[\\/]/).pop()?.toLowerCase() || "";
 		if (/\b(job[ -]?description|jd)\b/.test(name)) return "Job Description";
 		if (/\b(cv|resume|résumé)\b/.test(name)) return "CV";
 		if (/\bcover[ -]?letter\b/.test(name)) return "Cover Letter";
@@ -290,13 +296,13 @@ export class ApplicationService {
 			if (!item || typeof item !== "object") continue;
 			const record = item as Record<string, unknown>;
 			if (typeof record.path !== "string" || !record.path.trim()) continue;
-			const path = normalizePath(record.path);
+			const path = this.normalizeStoredPath(record.path);
 			const type = ARTEFACT_TYPES.find((candidate) => candidate === record.type) || this.inferArtefactType(path);
 			artefacts.push({
 				id: typeof record.id === "string" ? record.id : `legacy-${path}`,
 				type,
 				path,
-				filename: typeof record.filename === "string" ? record.filename : path.split("/").pop() || path,
+				filename: typeof record.filename === "string" ? record.filename : path.split(/[\\/]/).pop() || path,
 				createdAt: typeof record.createdAt === "string" ? record.createdAt : "",
 				updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : "",
 			});
@@ -311,35 +317,80 @@ export class ApplicationService {
 		const persisted = application.artefacts || [];
 		for (const artefact of persisted) {
 			if (artefact && typeof artefact.path === "string" && artefact.path) {
-				const path = normalizePath(artefact.path);
+				const path = this.normalizeStoredPath(artefact.path);
 				const file = this.resolveFile(path);
+				let exists = file instanceof TFile;
+				if (!exists && isAbsoluteFilePath(path)) {
+					try {
+						exists = require("fs").statSync(path).isFile();
+					} catch {
+						exists = false;
+					}
+				}
 				byPath.set(path, {
 					...artefact,
 					path,
-					filename: artefact.filename || path.split("/").pop() || path,
-					exists: file instanceof TFile,
+					filename: artefact.filename || path.split(/[\\/]/).pop() || path,
+					exists,
 				});
 			}
 		}
 
 		if (application.jobDescriptionFile) {
-			const path = normalizePath(application.jobDescriptionFile);
+			const path = this.normalizeStoredPath(application.jobDescriptionFile);
 			if (!byPath.has(path)) {
 				const file = this.resolveFile(path);
+				let exists = file instanceof TFile;
+				if (!exists && isAbsoluteFilePath(path)) {
+					try {
+						exists = require("fs").statSync(path).isFile();
+					} catch {
+						exists = false;
+					}
+				}
 				byPath.set(path, {
 					id: `legacy-jd-${path}`,
 					type: "Job Description",
 					path,
-					filename: path.split("/").pop() || path,
+					filename: path.split(/[\\/]/).pop() || path,
 					createdAt: "",
 					updatedAt: "",
-					exists: file instanceof TFile,
+					exists,
 				});
 			}
 		}
 
-		const folderPath = normalizePath(application.applicationFolderPath || "");
-		if (folderPath) {
+		const rawFolderPath = application.applicationFolderPath || "";
+		const folderPath = isAbsoluteFilePath(rawFolderPath) ? rawFolderPath : normalizePath(rawFolderPath);
+		if (folderPath && isAbsoluteFilePath(folderPath)) {
+			try {
+				const fs = require("fs") as {
+					readdirSync(path: string): { name: string; isFile(): boolean; isDirectory(): boolean }[];
+				};
+				const visit = (directory: string) => {
+					for (const entry of fs.readdirSync(directory)) {
+						const separator = directory.includes("\\") ? "\\" : "/";
+						const path = `${directory.replace(/[\\/]$/, "")}${separator}${entry.name}`;
+						if (entry.isDirectory()) visit(path);
+						else if (entry.isFile() && !byPath.has(path)) {
+							byPath.set(path, {
+								id: path,
+								type: this.inferArtefactType(path),
+								path,
+								filename: entry.name,
+								createdAt: "",
+								updatedAt: "",
+								exists: true,
+							});
+						}
+					}
+				};
+				visit(folderPath);
+			} catch (error) {
+				console.error(`Job Tracker: Could not scan linked external folder "${folderPath}":`, error);
+				new Notice("Could not read the linked folder outside the vault. Check the console for details.");
+			}
+		} else if (folderPath) {
 			const folder = this.app.vault.getAbstractFileByPath(folderPath);
 			if (folder instanceof TFolder) {
 				for (const file of this.app.vault.getFiles()) {
@@ -403,7 +454,7 @@ export class ApplicationService {
 								const updatedPath = replacePath(artefact.path);
 								if (updatedPath !== artefact.path) {
 									artefact.path = updatedPath;
-									artefact.filename = updatedPath.split("/").pop() || updatedPath;
+									artefact.filename = updatedPath.split(/[\\/]/).pop() || updatedPath;
 									artefact.updatedAt = new Date().toISOString();
 									changed = true;
 								}
@@ -546,54 +597,89 @@ export class ApplicationService {
 	 * Generates markdown body content for a newly created application.
 	 */
 	generateNoteContent(appData: Partial<JobApplication>): string {
-		const today = this.getTodayDateString();
 		const company = escapeMarkdown(appData.company) || "Company";
 		const role = escapeMarkdown(appData.role) || "Role";
+		const location = escapeMarkdown(appData.location) || "Not specified";
+		const closingDate = escapeMarkdown(appData.closingDate) || "Not specified";
+		const tags = (appData.tags || []).map((tag) => `#${escapeMarkdown(tag)}`).join(", ") || "None";
+		return `# ${company} - ${role}\n\n- **Company:** ${company}\n- **Role:** ${role}\n- **Location:** ${location}\n- **Closing Date:** ${closingDate}\n- **Tags:** ${tags}\n`;
+	}
 
-		let body = `# ${company} - ${role}\n\n`;
-		body += `${this.formatOverviewSection(appData)}\n`;
+	private async createStandardNote(folderPath: string, preferredName: string, content: string): Promise<TFile> {
+		await this.ensureFolder(folderPath);
+		const extension = preferredName.includes(".") ? preferredName.slice(preferredName.lastIndexOf(".")) : ".md";
+		const base = preferredName.slice(0, preferredName.length - extension.length);
+		let filePath = normalizePath(`${folderPath}/${preferredName}`);
+		let counter = 2;
+		while (this.app.vault.getAbstractFileByPath(filePath)) {
+			filePath = normalizePath(`${folderPath}/${base} (${counter})${extension}`);
+			counter++;
+		}
+		return this.app.vault.create(filePath, content.endsWith("\n") ? content : `${content}\n`);
+	}
 
-		body += `## 👥 Key Contacts\n`;
-		if (appData.contacts && appData.contacts.length > 0) {
-			for (const c of appData.contacts) {
-				body += `${this.formatContactLine(c)}\n`;
+	async simplifyLegacyApplicationNote(file: TFile): Promise<void> {
+		const application = this.getApplicationFromCache(file);
+		if (!application) return;
+		const content = await this.app.vault.read(file);
+		const frontmatter = content.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/);
+		if (!frontmatter) return;
+		const body = content.slice(frontmatter[0].length).trim();
+		const hasMinimalFields = ["Company", "Role", "Location", "Closing Date", "Tags"].every((field) =>
+			new RegExp(`^- \\*\\*${field}:\\*\\*`, "m").test(body)
+		);
+		if (hasMinimalFields) return;
+		if (body) {
+			const folderBase = file.parent?.path || this.plugin.settings.trackerFolderPath;
+			const folderPath = application.applicationFolderPath || normalizePath(
+				`${folderBase}/${this.sanitizeFileName(`${application.company} - ${application.role}`)}`
+			);
+			await this.ensureFolder(folderPath);
+			await this.createStandardNote(folderPath, "Application Notes.md", body);
+			if (!application.applicationFolderPath) {
+				await this.app.fileManager.processFrontMatter(file, (fm: JobApplicationFrontMatter) => {
+					fm.applicationFolderPath = folderPath;
+				});
 			}
-		} else {
-			body += `*No contacts added yet.*\n`;
 		}
-		body += `\n`;
+		await this.app.vault.modify(file, `${frontmatter[0]}${this.generateNoteContent(application)}`);
+	}
 
-		body += `## 📅 Interviews & Stages\n`;
-		if (appData.interviews && appData.interviews.length > 0) {
-			for (const iv of appData.interviews) {
-				body += `${this.formatInterviewLine(iv)}\n`;
+	private async moveVaultArtefactsIntoFolder(
+		applicationFile: TFile,
+		folderPath: string,
+		artefacts: ApplicationArtefact[],
+		jobDescriptionFile?: string
+	): Promise<void> {
+		const moved = new Map<string, string>();
+		for (const artefact of artefacts) {
+			if (!artefact || typeof artefact.path !== "string" || isAbsoluteFilePath(artefact.path)) continue;
+			const file = this.resolveFile(artefact.path);
+			if (!(file instanceof TFile) || file.path.startsWith(`${folderPath}/`)) continue;
+			let target = normalizePath(`${folderPath}/${file.name}`);
+			const extension = file.extension ? `.${file.extension}` : "";
+			const basename = extension ? file.name.slice(0, -extension.length) : file.name;
+			let counter = 2;
+			while (this.app.vault.getAbstractFileByPath(target)) {
+				target = normalizePath(`${folderPath}/${basename} (${counter})${extension}`);
+				counter++;
 			}
-		} else {
-			body += `*No interviews scheduled yet.*\n`;
+			await this.app.fileManager.renameFile(file, target);
+			moved.set(artefact.path, target);
 		}
-		body += `\n`;
-
-		body += `## 📝 Notes & Activity Log\n`;
-		if (appData.notes) {
-			body += `- **${today}**: ${escapeMarkdown(appData.notes, true)}\n`;
-		} else {
-			body += `- **${today}**: Application created (Status: ${escapeMarkdown(appData.status || "Applied")})\n`;
-		}
-		body += `\n`;
-
-		body += `## 📄 Job Description\n`;
-		if (appData.jobDescriptionFile) {
-			const isPdf = appData.jobDescriptionFile.toLowerCase().endsWith(".pdf");
-			const title = isPdf ? "Job Description (PDF)" : "Job Description (Markdown)";
-			body += `> [!abstract]- 📎 ${title}\n> ![[${appData.jobDescriptionFile}]]\n\n`;
-		}
-		if (appData.jobDescription) {
-			body += `${appData.jobDescription}\n`;
-		} else if (!appData.jobDescriptionFile) {
-			body += `*Paste job description or requirements here...*\n`;
-		}
-
-		return body;
+		if (moved.size === 0) return;
+		await this.app.fileManager.processFrontMatter(applicationFile, (fm: JobApplicationFrontMatter) => {
+			if (Array.isArray(fm.artefacts)) {
+				fm.artefacts = fm.artefacts.map((item) => {
+					if (!item || typeof item.path !== "string") return item;
+					const path = moved.get(item.path);
+					return path ? { ...item, path, filename: path.split(/[\\/]/).pop() || path, updatedAt: new Date().toISOString() } : item;
+				});
+			}
+			if (typeof jobDescriptionFile === "string") {
+				fm.jobDescriptionFile = moved.get(jobDescriptionFile) || jobDescriptionFile;
+			}
+		});
 	}
 
 	/**
@@ -618,9 +704,10 @@ export class ApplicationService {
 		jobDescription?: string;
 		jobDescriptionFile?: string;
 		contacts?: Contact[];
+		tags?: string[];
 	}): Promise<TFile> {
 		try {
-			const folderPath = this.plugin.settings.trackerFolderPath;
+			const folderPath = normalizePath(this.plugin.settings.trackerFolderPath);
 			await this.ensureFolder(folderPath);
 
 			const today = this.getTodayDateString();
@@ -631,11 +718,18 @@ export class ApplicationService {
 			if (baseFileName.length > 180) {
 				baseFileName = baseFileName.substring(0, 180).trim();
 			}
-			let filePath = `${normalizePath(folderPath)}/${baseFileName}.md`;
+
+			const applicationFolderPath = normalizePath(`${folderPath}/${baseFileName}`);
+			await this.ensureFolder(applicationFolderPath);
+			const artefactFolderPath = data.applicationFolderPath && !isAbsoluteFilePath(data.applicationFolderPath)
+				? normalizePath(data.applicationFolderPath)
+				: applicationFolderPath;
+			await this.ensureFolder(artefactFolderPath);
+			let filePath = `${applicationFolderPath}/${baseFileName}.md`;
 			let counter = 1;
 
 			while (this.app.vault.getAbstractFileByPath(filePath) != null && counter < 1000) {
-				filePath = `${normalizePath(folderPath)}/${baseFileName} (${counter}).md`;
+				filePath = `${applicationFolderPath}/${baseFileName} (${counter}).md`;
 				counter++;
 			}
 
@@ -662,14 +756,16 @@ export class ApplicationService {
 				source: data.source || "",
 				followUpDate: data.followUpDate || undefined,
 				closingDate: data.closingDate || undefined,
-				applicationFolderPath: data.applicationFolderPath ? normalizePath(data.applicationFolderPath) : undefined,
+				applicationFolderPath: data.applicationFolderPath
+					? (isAbsoluteFilePath(data.applicationFolderPath) ? data.applicationFolderPath : normalizePath(data.applicationFolderPath))
+					: applicationFolderPath,
 				artefacts: data.artefacts?.length
 					? data.artefacts
 					: data.jobDescriptionFile
 						? this.parseArtefactReferences(`Job Description | ${data.jobDescriptionFile}`)
 						: [],
 				jobDescriptionFile: data.jobDescriptionFile || "",
-				tags: ["job-application"],
+				tags: [...new Set(["job-application", ...(data.tags || [])])],
 				contacts: data.contacts || [],
 				interviews: [],
 				statusHistory: initialStatusHistory,
@@ -677,14 +773,38 @@ export class ApplicationService {
 
 			const yamlHeader = `---\n${stringifyYaml(frontmatterObj)}---\n\n`;
 
-			const body = this.generateNoteContent({
-				...data,
-				status,
-				dateApplied,
-			});
+			const body = this.generateNoteContent({ ...data, status, dateApplied });
 
 			const fullContent = `${yamlHeader}${body}`;
 			const file = await this.app.vault.create(filePath, fullContent);
+			if (data.notes?.trim()) {
+				await this.createStandardNote(artefactFolderPath, "Application Notes.md", data.notes.trim());
+			}
+			if (data.jobDescription?.trim()) {
+				const descriptionFile = await this.createStandardNote(artefactFolderPath, "Job Description.md", data.jobDescription.trim());
+				if (!(data.artefacts || []).some((artefact) => artefact.type === "Job Description")) {
+					await this.app.fileManager.processFrontMatter(file, (fm: JobApplicationFrontMatter) => {
+						const artefact: ApplicationArtefact = {
+							id: crypto.randomUUID(),
+							type: "Job Description",
+							path: descriptionFile.path,
+							filename: descriptionFile.name,
+							createdAt: new Date().toISOString(),
+							updatedAt: new Date().toISOString(),
+						};
+						fm.artefacts = [...(Array.isArray(fm.artefacts) ? fm.artefacts : []), artefact];
+						fm.jobDescriptionFile = descriptionFile.path;
+					});
+				}
+			}
+			if (this.plugin.settings.autoMoveArtefacts) {
+				await this.moveVaultArtefactsIntoFolder(
+					file,
+					artefactFolderPath,
+					frontmatterObj.artefacts || [],
+					frontmatterObj.jobDescriptionFile
+				);
+			}
 			this.invalidateCache();
 			new Notice(`Created application: ${data.company} - ${data.role}`);
 			return file;

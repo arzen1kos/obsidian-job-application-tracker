@@ -25,6 +25,7 @@ export class EditApplicationModal extends BaseApplicationModal {
 	private applicationFolderPath = "";
 	private artefacts: ApplicationArtefact[] = [];
 	private newJobDescriptionText = "";
+	private tags: string[] = [];
 
 	private companyInputEl: HTMLInputElement | null = null;
 	private roleInputEl: HTMLInputElement | null = null;
@@ -60,6 +61,7 @@ export class EditApplicationModal extends BaseApplicationModal {
 		this.closingDate = app.closingDate || "";
 		this.applicationFolderPath = app.applicationFolderPath || "";
 		this.artefacts = migrateArtefactReferences(app.artefacts || [], app.jobDescriptionFile);
+		this.tags = (app.tags || []).filter((tag) => tag !== "job-application");
 	}
 
 	renderContent(): void {
@@ -103,6 +105,7 @@ export class EditApplicationModal extends BaseApplicationModal {
 				});
 			});
 
+		const appliedFieldSettings: HTMLElement[] = [];
 		// Status
 		new Setting(contentEl)
 			.setName("Status")
@@ -113,11 +116,14 @@ export class EditApplicationModal extends BaseApplicationModal {
 				dropdown.setValue(this.status);
 				dropdown.onChange((value) => {
 					this.status = value;
+					for (const setting of appliedFieldSettings) {
+						setting.toggleClass("job-tracker-is-hidden", this.status !== "Applied");
+					}
 				});
 			});
 
 		// Date Applied
-		new Setting(contentEl)
+		const dateAppliedSetting = new Setting(contentEl)
 			.setName("Date Applied")
 			.setDesc("Date when the application was submitted")
 			.addText((text) => {
@@ -126,6 +132,7 @@ export class EditApplicationModal extends BaseApplicationModal {
 					this.dateApplied = value;
 				});
 			});
+		appliedFieldSettings.push(dateAppliedSetting.settingEl);
 
 		// Location
 		new Setting(contentEl)
@@ -204,7 +211,7 @@ export class EditApplicationModal extends BaseApplicationModal {
 			});
 
 		// Follow-up Date
-		new Setting(contentEl)
+		const followUpSetting = new Setting(contentEl)
 			.setName("Follow-up / Deadline Date")
 			.setDesc("Optional reminder or deadline date")
 			.addText((text) => {
@@ -213,6 +220,10 @@ export class EditApplicationModal extends BaseApplicationModal {
 					this.followUpDate = value;
 				});
 			});
+		appliedFieldSettings.push(followUpSetting.settingEl);
+		for (const setting of appliedFieldSettings) {
+				setting.toggleClass("job-tracker-is-hidden", this.status !== "Applied");
+		}
 
 		new Setting(contentEl)
 			.setName("Closing Date")
@@ -223,6 +234,10 @@ export class EditApplicationModal extends BaseApplicationModal {
 					this.closingDate = value;
 				});
 			});
+
+		contentEl.createEl("h3", { text: "Tags" });
+		const tagContainer = contentEl.createDiv({ cls: "job-tracker-tag-selector" });
+		this.renderTagOptions(tagContainer);
 
 		const artefactContainer = contentEl.createDiv({ cls: "job-tracker-artefact-editor" });
 		const discovered = this.plugin.appService.getApplicationArtefacts(this.application);
@@ -270,6 +285,22 @@ export class EditApplicationModal extends BaseApplicationModal {
 					this.close();
 				})
 			);
+	}
+
+	private renderTagOptions(container: HTMLElement): void {
+		container.empty();
+		for (const tag of this.plugin.settings.applicationTagOptions) {
+			const selected = this.tags.includes(tag);
+			const button = container.createEl("button", {
+				text: tag,
+				cls: `job-tracker-tag-option ${selected ? "is-selected" : ""}`,
+				attr: { type: "button", "aria-pressed": String(selected) },
+			});
+			button.onclick = () => {
+				this.tags = selected ? this.tags.filter((item) => item !== tag) : [...this.tags, tag];
+				this.renderTagOptions(container);
+			};
+		}
 	}
 
 	private async handleSubmit(btn?: ButtonComponent): Promise<void> {
@@ -325,6 +356,7 @@ export class EditApplicationModal extends BaseApplicationModal {
 					applicationFolderPath: this.applicationFolderPath.trim() || undefined,
 					artefacts: this.artefacts,
 					jobDescriptionFile: this.artefacts.find((item) => item.type === "Job Description")?.path || "",
+					tags: [...new Set(["job-application", ...this.tags])],
 				},
 				this.newJobDescriptionText ? this.newJobDescriptionText.trim() : undefined
 			);

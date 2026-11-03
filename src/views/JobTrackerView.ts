@@ -3,12 +3,14 @@ import {
 	WorkspaceLeaf,
 	setIcon,
 	TFile,
+	TFolder,
 	debounce,
 	Menu,
 	normalizePath,
+	Notice,
 } from "obsidian";
 import JobApplicationTrackerPlugin from "../main";
-import { getDeadlineStatus, JobApplication, JobSortField, JobStatus } from "../types";
+import { getDeadlineStatus, JobApplication, JobSortField, JobStatus, SavedTrackerView, isAbsoluteFilePath } from "../types";
 import { sanitizeUrl } from "../services/ApplicationService";
 import { VIEW_TYPE_JOB_TRACKER } from "../constants";
 import { NewApplicationModal } from "../modals/NewApplicationModal";
@@ -22,8 +24,10 @@ import { KanbanRenderer } from "./renderers/KanbanRenderer";
 import { TableRenderer } from "./renderers/TableRenderer";
 import { ListRenderer } from "./renderers/ListRenderer";
 import { MetricsRenderer } from "./renderers/MetricsRenderer";
+import { GalleryRenderer } from "./renderers/GalleryRenderer";
+import { CompanyRenderer } from "./renderers/CompanyRenderer";
 
-export type TrackerViewMode = "kanban" | "table" | "list" | "metrics";
+export type TrackerViewMode = "kanban" | "table" | "list" | "metrics" | "gallery" | "company";
 
 export interface MetricsData {
 	appHistories: { app: JobApplication; visited: string[] }[];
@@ -56,14 +60,21 @@ export class JobTrackerView extends ItemView {
 	private searchQuery = "";
 	private statusFilter = "All";
 	private deadlineFilter = "All";
+	private companyFilter = "All";
+	private tagFilter = "All";
+	private locationFilter = "All";
+	private selectedSavedViewId = "";
 	sortField: JobSortField = "dateApplied";
 	sortAscending = false;
 	applications: JobApplication[] = [];
+	selectedApplication: JobApplication | null = null;
 
 	private kanbanRenderer: KanbanRenderer;
 	private tableRenderer: TableRenderer;
 	private listRenderer: ListRenderer;
 	private metricsRenderer: MetricsRenderer;
+	private galleryRenderer: GalleryRenderer;
+	private companyRenderer: CompanyRenderer;
 
 	/** Incremental data version for metrics computation and caching */
 	private dataVersion = 0;
@@ -77,6 +88,10 @@ export class JobTrackerView extends ItemView {
 	private filterRowEl: HTMLElement | null = null;
 	private statusSelectEl: HTMLSelectElement | null = null;
 	private deadlineSelectEl: HTMLSelectElement | null = null;
+	private companySelectEl: HTMLSelectElement | null = null;
+	private tagSelectEl: HTMLSelectElement | null = null;
+	private locationSelectEl: HTMLSelectElement | null = null;
+	private savedViewSelectEl: HTMLSelectElement | null = null;
 	private searchInputEl: HTMLInputElement | null = null;
 	private searchClearEl: HTMLElement | null = null;
 
@@ -91,6 +106,8 @@ export class JobTrackerView extends ItemView {
 		this.tableRenderer = new TableRenderer(this);
 		this.listRenderer = new ListRenderer(this);
 		this.metricsRenderer = new MetricsRenderer(this);
+		this.galleryRenderer = new GalleryRenderer(this);
+		this.companyRenderer = new CompanyRenderer(this);
 
 		this.debouncedRefresh = debounce(
 			() => {
@@ -124,6 +141,7 @@ export class JobTrackerView extends ItemView {
 	}
 
 	async onOpen() {
+		this.registerInterval(window.setInterval(() => this.renderContentOnly(), 60 * 60 * 1000));
 		// Register vault & cache change listeners to auto-refresh view
 		// Only respond to changes within the application or interview folders
 		this.registerEvent(
@@ -194,6 +212,10 @@ export class JobTrackerView extends ItemView {
 		this.filterRowEl = null;
 		this.statusSelectEl = null;
 		this.deadlineSelectEl = null;
+		this.companySelectEl = null;
+		this.tagSelectEl = null;
+		this.locationSelectEl = null;
+		this.savedViewSelectEl = null;
 		this.searchInputEl = null;
 		this.searchClearEl = null;
 		this.modeButtons = [];
@@ -201,6 +223,7 @@ export class JobTrackerView extends ItemView {
 	}
 
 	loadAndRender() {
+		this.plugin.appService.invalidateCache();
 		this.applications = this.plugin.appService.getAllApplications();
 		this.dataVersion++;
 		this.metricsCache = null;
@@ -246,6 +269,13 @@ export class JobTrackerView extends ItemView {
 		if (this.deadlineSelectEl && this.deadlineSelectEl.value !== this.deadlineFilter) {
 			this.deadlineSelectEl.value = this.deadlineFilter;
 		}
+		if (this.statusSelectEl && this.statusSelectEl.value !== this.statusFilter) this.statusSelectEl.value = this.statusFilter;
+		if (this.companySelectEl && this.companySelectEl.value !== this.companyFilter) this.companySelectEl.value = this.companyFilter;
+		if (this.tagSelectEl && this.tagSelectEl.value !== this.tagFilter) this.tagSelectEl.value = this.tagFilter;
+		if (this.locationSelectEl && this.locationSelectEl.value !== this.locationFilter) this.locationSelectEl.value = this.locationFilter;
+		if (this.savedViewSelectEl && this.savedViewSelectEl.value !== this.selectedSavedViewId) {
+			this.savedViewSelectEl.value = this.selectedSavedViewId;
+		}
 	}
 
 	renderHeader(container: HTMLElement) {
@@ -275,6 +305,8 @@ export class JobTrackerView extends ItemView {
 			{ mode: "table", label: "Table View", icon: "table" },
 			{ mode: "list", label: "List View", icon: "list" },
 			{ mode: "metrics", label: "Metrics & Statistics", icon: "bar-chart-3" },
+			{ mode: "gallery", label: "Gallery View", icon: "layout-grid" },
+			{ mode: "company", label: "Company View", icon: "building-2" },
 		];
 
 		for (const { mode, label, icon } of modes) {
@@ -295,6 +327,7 @@ export class JobTrackerView extends ItemView {
 				this.updateHeaderState();
 				this.renderContentOnly();
 			};
+
 		}
 
 		// Refresh button
@@ -304,6 +337,32 @@ export class JobTrackerView extends ItemView {
 		});
 		setIcon(refreshBtn, "refresh-cw");
 		refreshBtn.onclick = () => this.loadAndRender();
+
+		const saveViewBtn = headerActions.createEl("button", {
+			cls: "job-tracker-icon-btn",
+			text: "Save view",
+			attr: { "aria-label": "Save current view" },
+		});
+		saveViewBtn.onclick = () => {
+			const view: SavedTrackerView = {
+				id: crypto.randomUUID(),
+				name: `View ${this.plugin.settings.savedViews.length + 1}`,
+				mode: this.currentMode,
+				search: this.searchQuery,
+				status: this.statusFilter,
+				company: this.companyFilter,
+				tags: this.tagFilter === "All" ? [] : [this.tagFilter],
+				location: this.locationFilter,
+				deadline: this.deadlineFilter,
+				sortField: this.sortField,
+				sortAscending: this.sortAscending,
+			};
+			this.plugin.settings.savedViews.push(view);
+			this.selectedSavedViewId = view.id;
+			this.savedViewSelectEl?.createEl("option", { value: view.id, text: view.name });
+			void this.plugin.saveSettings();
+			this.render();
+		};
 
 		// Add Application CTA button
 		const addBtn = headerActions.createEl("button", {
@@ -393,6 +452,78 @@ export class JobTrackerView extends ItemView {
 			this.deadlineFilter = (e.target as HTMLSelectElement).value;
 			this.renderContentOnly();
 		};
+
+		this.savedViewSelectEl = this.filterRowEl.createEl("select", {
+			cls: "job-tracker-filter-select",
+			attr: { "aria-label": "Load saved view" },
+		});
+		this.savedViewSelectEl.createEl("option", { value: "", text: "Saved views" });
+		for (const savedView of this.plugin.settings.savedViews) {
+			this.savedViewSelectEl.createEl("option", { value: savedView.id, text: savedView.name });
+		}
+		this.savedViewSelectEl.value = this.selectedSavedViewId;
+		this.savedViewSelectEl.onchange = () => {
+			const savedView = this.plugin.settings.savedViews.find((item) => item.id === this.savedViewSelectEl?.value);
+			if (savedView) this.applySavedView(savedView);
+		};
+		this.companySelectEl = this.addFilterSelect(
+			"Filter by company",
+			"All Companies",
+			[...new Set(this.applications.map((application) => application.company).filter(Boolean))],
+			this.companyFilter,
+			(value) => { this.companyFilter = value; }
+		);
+		this.tagSelectEl = this.addFilterSelect(
+			"Filter by tag",
+			"All Tags",
+			[...new Set(this.applications.flatMap((application) => (application.tags || []).filter((tag) => tag !== "job-application")))],
+			this.tagFilter,
+			(value) => { this.tagFilter = value; }
+		);
+		this.locationSelectEl = this.addFilterSelect(
+			"Filter by location",
+			"All Locations",
+			[...new Set(this.applications.map((application) => application.location || "").filter(Boolean))],
+			this.locationFilter,
+			(value) => { this.locationFilter = value; }
+		);
+	}
+
+	private addFilterSelect(
+		ariaLabel: string,
+		allLabel: string,
+		values: string[],
+		selected: string,
+		onChange: (value: string) => void
+	): HTMLSelectElement {
+		const select = this.filterRowEl!.createEl("select", {
+			cls: "job-tracker-filter-select",
+			attr: { "aria-label": ariaLabel },
+		});
+		select.createEl("option", { value: "All", text: allLabel });
+		for (const value of values.sort((a, b) => a.localeCompare(b))) {
+			select.createEl("option", { value, text: value });
+		}
+		select.value = selected;
+		select.onchange = () => {
+			onChange(select.value);
+			this.renderContentOnly();
+		};
+		return select;
+	}
+
+	private applySavedView(savedView: SavedTrackerView): void {
+		this.currentMode = savedView.mode;
+		this.searchQuery = savedView.search || "";
+		this.statusFilter = savedView.status;
+		this.companyFilter = savedView.company;
+		this.tagFilter = savedView.tags[0] || "All";
+		this.locationFilter = savedView.location;
+		this.deadlineFilter = savedView.deadline;
+		this.sortField = savedView.sortField;
+		this.sortAscending = savedView.sortAscending;
+		this.selectedSavedViewId = savedView.id;
+		this.render();
 	}
 
 	renderContentOnly() {
@@ -400,6 +531,9 @@ export class JobTrackerView extends ItemView {
 		if (contentArea instanceof HTMLElement) {
 			contentArea.empty();
 			const filteredApps = this.getFilteredAndSortedApps();
+			const selectedIsVisible = !!this.selectedApplication &&
+				filteredApps.some((app) => app.filePath === this.selectedApplication?.filePath);
+			contentArea.toggleClass("job-tracker-has-details", selectedIsVisible);
 			if (filteredApps.length === 0) {
 				if (this.applications.length === 0) {
 					this.renderEmptyState(contentArea);
@@ -408,14 +542,24 @@ export class JobTrackerView extends ItemView {
 				}
 				return;
 			}
+			const mainContent = selectedIsVisible
+				? contentArea.createDiv({ cls: "job-tracker-main-content" })
+				: contentArea;
 			if (this.currentMode === "kanban") {
-				this.kanbanRenderer.render(contentArea, filteredApps);
+				this.kanbanRenderer.render(mainContent, filteredApps);
 			} else if (this.currentMode === "table") {
-				this.tableRenderer.render(contentArea, filteredApps);
+				this.tableRenderer.render(mainContent, filteredApps);
 			} else if (this.currentMode === "list") {
-				this.listRenderer.render(contentArea, filteredApps);
+				this.listRenderer.render(mainContent, filteredApps);
+			} else if (this.currentMode === "metrics") {
+				this.metricsRenderer.render(mainContent);
+			} else if (this.currentMode === "gallery") {
+				this.galleryRenderer.render(mainContent, filteredApps);
 			} else {
-				this.metricsRenderer.render(contentArea);
+				this.companyRenderer.render(mainContent, filteredApps);
+			}
+			if (selectedIsVisible && this.selectedApplication) {
+				this.renderDetailsPane(contentArea, this.selectedApplication);
 			}
 		}
 	}
@@ -430,6 +574,9 @@ export class JobTrackerView extends ItemView {
 		if (this.deadlineFilter !== "All") {
 			result = result.filter((application) => getDeadlineStatus(application.closingDate) === this.deadlineFilter);
 		}
+		if (this.companyFilter !== "All") result = result.filter((application) => application.company === this.companyFilter);
+		if (this.tagFilter !== "All") result = result.filter((application) => application.tags?.includes(this.tagFilter));
+		if (this.locationFilter !== "All") result = result.filter((application) => application.location === this.locationFilter);
 
 		// Search filter
 		if (this.searchQuery.trim()) {
@@ -483,8 +630,21 @@ export class JobTrackerView extends ItemView {
 				if (dateA !== dateB) return this.sortAscending ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
 			}
 
-			const rawA = a[this.sortField];
-			const rawB = b[this.sortField];
+			const countFor = (application: JobApplication): number => {
+				const artefacts = this.plugin.appService.getApplicationArtefacts(application);
+				if (this.sortField === "jobDescription") return artefacts.some((item) => item.type === "Job Description") ? 1 : 0;
+				if (this.sortField === "cvs") return artefacts.filter((item) => item.type === "CV").length;
+				if (this.sortField === "coverLetters") return artefacts.filter((item) => item.type === "Cover Letter").length;
+				if (this.sortField === "notes") return artefacts.filter((item) => item.type.endsWith("Notes") || item.type === "General Notes").length;
+				return artefacts.length;
+			};
+			const countFields = ["jobDescription", "cvs", "coverLetters", "notes", "artefacts"];
+			if (countFields.includes(this.sortField)) {
+				const difference = countFor(a) - countFor(b);
+				if (difference !== 0) return this.sortAscending ? difference : -difference;
+			}
+			const rawA = this.sortField === "folder" ? a.applicationFolderPath : a[this.sortField as Exclude<JobSortField, "folder" | "jobDescription" | "cvs" | "coverLetters" | "notes" | "artefacts">];
+			const rawB = this.sortField === "folder" ? b.applicationFolderPath : b[this.sortField as Exclude<JobSortField, "folder" | "jobDescription" | "cvs" | "coverLetters" | "notes" | "artefacts">];
 			const valA = typeof rawA === "string" ? rawA.toLowerCase() : "";
 			const valB = typeof rawB === "string" ? rawB.toLowerCase() : "";
 
@@ -494,6 +654,64 @@ export class JobTrackerView extends ItemView {
 		});
 
 		return result;
+	}
+
+	private renderDetailsPane(container: HTMLElement, application: JobApplication): void {
+		const pane = container.createDiv({ cls: "job-tracker-details-pane" });
+		const title = pane.createDiv({ cls: "job-tracker-details-heading" });
+		title.createEl("h2", { text: `${application.company} - ${application.role}` });
+		const close = title.createEl("button", { text: "Close", cls: "job-tracker-details-close" });
+		close.onclick = () => {
+			this.selectedApplication = null;
+			this.renderContentOnly();
+		};
+		const details: [string, string][] = [
+			["Status", application.status],
+			["Applied Date", application.dateApplied || "—"],
+			["Follow Up Date", application.followUpDate || "—"],
+			["Tags", (application.tags || []).join(", ") || "—"],
+			["Folder", application.applicationFolderPath || "—"],
+			["Company", application.company],
+			["Role", application.role],
+			["Location", application.location || "—"],
+			["Closing Date", application.closingDate || "—"],
+		];
+		for (const [label, value] of details) {
+			const row = pane.createDiv({ cls: "job-tracker-details-row" });
+			row.createEl("strong", { text: label });
+			row.createSpan({ text: value });
+			if (label === "Folder" && application.applicationFolderPath) {
+				const openFolder = row.createEl("button", { text: "Open folder" });
+				openFolder.onclick = () => this.openApplicationFolder(application.applicationFolderPath!);
+			}
+		}
+		const artefacts = this.plugin.appService.getApplicationArtefacts(application);
+		pane.createEl("h3", { text: `Artefacts (${artefacts.length})` });
+		for (const artefact of artefacts) {
+			const button = pane.createEl("button", {
+				text: `${artefact.exists === false ? "⚠ " : ""}${artefact.type}: ${artefact.filename}`,
+				cls: artefact.exists === false ? "job-tracker-missing-reference" : "job-tracker-artefact-link",
+			});
+			button.onclick = () => {
+				if (artefact.exists === false) new Notice(`Linked file could not be found: ${artefact.path}`);
+				else void this.openNote(artefact.path);
+			};
+		}
+	}
+
+	async openApplicationFolder(path: string): Promise<void> {
+		if (isAbsoluteFilePath(path)) {
+			await this.openNote(path);
+			return;
+		}
+		const folder = this.app.vault.getAbstractFileByPath(normalizePath(path));
+		if (!(folder instanceof TFolder)) {
+			new Notice(`The linked folder could not be found: ${path}`);
+			return;
+		}
+		const file = this.app.vault.getFiles().find((item) => item.path.startsWith(`${folder.path}/`));
+		if (file) await this.openNote(file.path);
+		else new Notice(`The linked folder is empty: ${folder.name}`);
 	}
 
 	/**
@@ -548,6 +766,10 @@ export class JobTrackerView extends ItemView {
 			this.searchQuery = "";
 			this.statusFilter = "All";
 			this.deadlineFilter = "All";
+			this.companyFilter = "All";
+			this.tagFilter = "All";
+			this.locationFilter = "All";
+			this.selectedSavedViewId = "";
 			this.render();
 		};
 	}
@@ -840,8 +1062,24 @@ export class JobTrackerView extends ItemView {
 	}
 
 	async openNote(filePath: string) {
+		if (isAbsoluteFilePath(filePath)) {
+			try {
+				const shell = require("electron").shell as { openPath?: (path: string) => Promise<string> };
+				if (!shell?.openPath) {
+					new Notice("Opening files outside the vault is not supported on this Obsidian platform.");
+					return;
+				}
+				const error = await shell.openPath(filePath);
+				if (error) new Notice(`Could not open file: ${error}`);
+			} catch (error) {
+				console.error("Job Tracker: Could not open external artefact:", error);
+				new Notice("Could not open file outside the vault. Check the console for details.");
+			}
+			return;
+		}
 		const file = this.plugin.appService.resolveFile(filePath);
 		if (file instanceof TFile) {
+			await this.plugin.appService.simplifyLegacyApplicationNote(file);
 			const targetLeaf = this.app.workspace.getLeaf("tab");
 			await targetLeaf.openFile(file);
 		}

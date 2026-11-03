@@ -116,9 +116,20 @@ export class KanbanRenderer {
 				"aria-label": `${app.company} - ${app.role} (${app.status}). Press Alt+Right or Alt+Left arrow to change stage.`,
 			},
 		});
+		card.onclick = (event) => {
+			if (event.target instanceof HTMLElement && event.target.closest("button, a, [role='button']")) return;
+			this.view.selectedApplication = app;
+			this.view.renderContentOnly();
+		};
 
 		// Keyboard navigation between Kanban columns
 		card.onkeydown = async (e) => {
+			if ((e.key === "Enter" || e.key === " ") && e.target === card) {
+				e.preventDefault();
+				this.view.selectedApplication = app;
+				this.view.renderContentOnly();
+				return;
+			}
 			if (e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
 				e.preventDefault();
 				const statuses = this.view.plugin.settings.statuses;

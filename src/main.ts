@@ -321,6 +321,12 @@ export default class JobApplicationTrackerPlugin extends Plugin {
 				? [...data.defaultSourceOptions]
 				: [...DEFAULT_SETTINGS.defaultSourceOptions],
 			openViewLocation: data?.openViewLocation ?? DEFAULT_SETTINGS.openViewLocation,
+			autoMoveArtefacts: data?.autoMoveArtefacts ?? DEFAULT_SETTINGS.autoMoveArtefacts,
+			applicationTagOptions: Array.isArray(data?.applicationTagOptions)
+				? [...data.applicationTagOptions]
+				: [...DEFAULT_SETTINGS.applicationTagOptions],
+			hiddenTableColumns: Array.isArray(data?.hiddenTableColumns) ? [...data.hiddenTableColumns] : [],
+			savedViews: Array.isArray(data?.savedViews) ? data.savedViews : [],
 		};
 	}
 

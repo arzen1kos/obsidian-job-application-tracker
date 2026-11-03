@@ -233,6 +233,7 @@
 .job-tracker-filter-row {
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
 	gap: 8px;
 }
 
@@ -284,6 +285,10 @@
 	padding: 0 8px;
 }
 
+.job-tracker-search-wrapper {
+	min-width: 180px;
+}
+
 /* Content Area */
 .job-tracker-content-area {
 	flex: 1 1 auto;
@@ -291,6 +296,214 @@
 	overflow: auto;
 	margin-top: 10px;
 	-webkit-overflow-scrolling: touch;
+}
+
+.job-tracker-gallery {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+	gap: 14px;
+	padding: 4px;
+}
+
+.job-tracker-gallery-card,
+.job-tracker-company-card {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 12px;
+	background: var(--background-secondary);
+	box-shadow: 0 1px 3px color-mix(in srgb, var(--text-normal) 6%, transparent);
+}
+
+.job-tracker-gallery-card {
+	position: relative;
+	padding: 16px;
+	cursor: pointer;
+	transition: border-color 120ms ease, transform 120ms ease;
+	border-top: 3px solid var(--background-modifier-border);
+}
+
+.job-tracker-gallery-card:hover,
+.job-tracker-gallery-card:focus-visible {
+	border-color: var(--interactive-accent);
+	transform: translateY(-1px);
+}
+
+.job-tracker-gallery-card.status-applied { border-top-color: var(--color-blue, #3182ce); }
+.job-tracker-gallery-card.status-interviewing,
+.job-tracker-gallery-card.status-screening { border-top-color: var(--color-yellow, #d69e2e); }
+.job-tracker-gallery-card.status-offer,
+.job-tracker-gallery-card.status-accepted { border-top-color: var(--color-green, #38a169); }
+.job-tracker-gallery-card.status-rejected { border-top-color: var(--color-red, #e53e3e); }
+.job-tracker-gallery-card.status-withdrawn,
+.job-tracker-gallery-card.status-ghosted { border-top-color: var(--text-faint); }
+
+.job-tracker-gallery-card h3 {
+	margin: 8px 0 2px;
+	font-size: 1.05em;
+}
+
+.job-tracker-gallery-card h4 {
+	margin: 0 0 12px;
+	font-size: 0.95em;
+	font-weight: 500;
+	color: var(--text-muted);
+}
+
+.job-tracker-gallery-status,
+.job-tracker-company-status {
+	display: inline-flex;
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+	font-size: 0.75em;
+}
+
+.job-tracker-gallery-closing {
+	margin-top: 8px;
+	font-size: 0.85em;
+}
+
+.job-tracker-company-list {
+	display: grid;
+	gap: 12px;
+}
+
+.job-tracker-company-card {
+	padding: 14px 16px;
+}
+
+.job-tracker-company-heading,
+.job-tracker-details-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.job-tracker-company-heading h3,
+.job-tracker-details-heading h2 {
+	margin: 0;
+}
+
+.job-tracker-company-heading > span {
+	color: var(--text-muted);
+	font-size: 0.85em;
+}
+
+.job-tracker-company-statuses {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 10px 0;
+}
+
+.job-tracker-company-application {
+	display: block;
+	width: 100%;
+	padding: 7px 8px;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	text-align: left;
+	color: var(--text-normal);
+}
+
+.job-tracker-company-application:hover {
+	background: var(--background-modifier-hover);
+}
+
+.job-tracker-details-pane {
+	margin-top: 16px;
+	padding: 18px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 12px;
+	background: var(--background-secondary);
+}
+
+.job-tracker-content-area.job-tracker-has-details {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(270px, 340px);
+	gap: 12px;
+	overflow: hidden;
+}
+
+.job-tracker-main-content {
+	min-width: 0;
+	min-height: 0;
+	overflow: auto;
+}
+
+.job-tracker-content-area.job-tracker-has-details .job-tracker-details-pane {
+	min-width: 0;
+	min-height: 0;
+	margin-top: 0;
+	overflow: auto;
+}
+
+.job-tracker-details-row {
+	display: grid;
+	grid-template-columns: minmax(120px, 1fr) 2fr;
+	gap: 12px;
+	padding: 5px 0;
+	border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 55%, transparent);
+}
+
+.job-tracker-details-row strong {
+	color: var(--text-muted);
+	font-weight: 500;
+}
+
+.job-tracker-details-pane h3 {
+	margin: 16px 0 8px;
+}
+
+.job-tracker-details-pane .job-tracker-artefact-link,
+.job-tracker-details-pane .job-tracker-missing-reference {
+	display: block;
+	margin: 5px 0;
+}
+
+.job-tracker-tag-selector {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 8px 0 16px;
+}
+
+.job-tracker-tag-option {
+	padding: 4px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 999px;
+	background: var(--background-primary);
+	color: var(--text-muted);
+}
+
+.job-tracker-tag-option.is-selected {
+	border-color: var(--interactive-accent);
+	background: color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary));
+	color: var(--text-normal);
+}
+
+.job-tracker-restore-columns {
+	margin-bottom: 8px;
+	padding: 4px 9px;
+	border-radius: 6px;
+}
+
+.job-tracker-is-hidden {
+	display: none !important;
+}
+
+@media (max-width: 760px) {
+	.job-tracker-content-area.job-tracker-has-details {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(220px, 1fr) auto;
+		overflow: auto;
+	}
+
+	.job-tracker-content-area.job-tracker-has-details .job-tracker-details-pane {
+		max-height: 40vh;
+	}
 }
 
 /* Empty State */

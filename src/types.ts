@@ -106,6 +106,10 @@ export interface ApplicationArtefact {
 	exists?: boolean;
 }
 
+export function isAbsoluteFilePath(path: string): boolean {
+	return /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("\\\\") || path.startsWith("/");
+}
+
 export type DeadlineStatus = "overdue" | "within-7-days" | "within-14-days" | "later" | "none";
 
 export function getDeadlineStatus(date?: string, now = new Date()): DeadlineStatus {
@@ -143,9 +147,23 @@ export interface JobApplication {
 	interviews: InterviewRound[];
 	statusHistory: StatusHistoryEntry[];
 	tags: string[];
-	notes?: string;
-	jobDescription?: string;
 	jobDescriptionFile?: string; // Path or name of attached PDF or MD file
+}
+
+export type SavedViewMode = "kanban" | "table" | "list" | "metrics" | "gallery" | "company";
+
+export interface SavedTrackerView {
+	id: string;
+	name: string;
+	mode: SavedViewMode;
+	search?: string;
+	status: string;
+	company: string;
+	tags: string[];
+	location: string;
+	deadline: string;
+	sortField: JobSortField;
+	sortAscending: boolean;
 }
 
 export interface JobApplicationTrackerSettings {
@@ -157,6 +175,10 @@ export interface JobApplicationTrackerSettings {
 	interviewPrepTemplate: string;
 	defaultSourceOptions: string[];
 	openViewLocation: "tab" | "right-sidebar" | "left-sidebar";
+	autoMoveArtefacts: boolean;
+	applicationTagOptions: string[];
+	hiddenTableColumns: string[];
+	savedViews: SavedTrackerView[];
 }
 
 export interface JobApplicationFrontMatter {
@@ -186,6 +208,12 @@ export interface JobApplicationFrontMatter {
 	| "company"
 	| "role"
 	| "status"
+	| "folder"
+	| "jobDescription"
+	| "cvs"
+	| "coverLetters"
+	| "notes"
+	| "artefacts"
 	| "dateApplied"
 	| "location"
 	| "salary"
