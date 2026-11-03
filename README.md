@@ -34,8 +34,9 @@
   - **Recent Activity Timeline**: Timestamped audit trail of recent status transitions across all applications.
 
 ### 📝 Native Markdown Notes & Data Storage
-
-- Each application is saved in its own Markdown folder below your designated applications folder (`Applications/{Company - Role}/` by default).
+- Each new application is saved as `Application.md` in its own role-first folder below your designated applications folder (`Applications/{Role - Company}/` by default).
+- Creating an application requires exactly one Job Description source: a linked file or pasted text. Pasted content is saved as `Job Description.md`; a selected vault file is moved into the application folder when automatic artefact moving is enabled.
+- New applications record `datePosted` (default: today); older notes without this field remain valid and are not backfilled.
 - Zero vendor lock-in; fully compatible with Obsidian Search, Dataview, and graph view.
 - New application notes show only Company, Role, Location, Closing Date, and Tags. Contacts, interviews, status history, and other metadata remain in frontmatter and dedicated views/modals.
 - Initial notes and pasted job descriptions are created as standard Markdown files in the application folder. Existing long-form note bodies are preserved as `Application Notes.md` before the application note is simplified on first open.
@@ -159,7 +160,7 @@ Applications are Markdown notes discovered by `ApplicationService` from the conf
 
 ### Proposed data model
 
-The application Markdown note remains the database record. New fields are optional for old notes:
+The application Markdown note remains the metadata record. New fields are optional for old notes:
 
 ```ts
 type ArtefactType =
@@ -177,6 +178,7 @@ interface ApplicationArtefact {
 }
 
 interface JobApplication {
+  datePosted?: string; // YYYY-MM-DD
   applicationFolderPath?: string;
   closingDate?: string; // YYYY-MM-DD
   artefacts: ApplicationArtefact[];
@@ -184,7 +186,7 @@ interface JobApplication {
 }
 ```
 
-The implementation adds these fields to `src/types.ts`. Folder contents are discovered at read time from the vault, rather than duplicated as a second file inventory in plugin data. Explicit links remain in frontmatter so missing files can be shown and renamed links can be repaired.
+The implementation adds `datePosted` to `src/types.ts`. New records live at `Applications/{Role - Company}/Application.md` (or the configured applications folder), with their JD and linked vault artefacts colocated when automatic moving is enabled. Folder contents are discovered at read time from the vault, rather than duplicated as a second file inventory in plugin data. Explicit links remain in frontmatter so missing files can be shown and renamed links can be repaired.
 
 ### Obsidian events and migration
 
@@ -192,11 +194,11 @@ The plugin listens to Vault `create`, `delete`, and `rename` events and invalida
 
 Migration is additive and non-destructive:
 
-1. Existing application notes, statuses, contacts, interviews, body text, and `jobDescriptionFile` values remain in place.
+1. Existing application notes, paths, statuses, contacts, interviews, body text, and `jobDescriptionFile` values remain in place; existing notes are not moved into the new per-application folder layout.
 2. A legacy JD path is exposed as a Job Description artefact when reading old frontmatter; the embedded note section remains unchanged.
 3. Older `Type | path` artefact strings are parsed into typed artefact records on load. On editing, artefacts are written to `artefacts` while `jobDescriptionFile` remains synchronized for older plugin versions.
 4. Users can set `applicationFolderPath`; its current files are discovered automatically. The default auto-move option relocates linked vault files into a newly created application folder without overwriting existing names. External files are left untouched.
-5. `closingDate` is optional and is preserved as `YYYY-MM-DD`.
+5. `closingDate` and `datePosted` are optional for legacy applications and are preserved as `YYYY-MM-DD`; newly created applications default `datePosted` to today.
 
 ### Dashboard and modal UX
 

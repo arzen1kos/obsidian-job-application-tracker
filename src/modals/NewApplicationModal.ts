@@ -320,6 +320,13 @@ export class NewApplicationModal extends Modal {
 			this.roleInputEl?.focus();
 			return;
 		}
+		const jobDescriptionFileCount = this.artefacts.filter((artefact) => artefact.type === "Job Description").length;
+		const hasJobDescriptionFile = jobDescriptionFileCount === 1;
+		const hasJobDescriptionText = !!jobDescriptionText.trim();
+		if (jobDescriptionFileCount > 1 || hasJobDescriptionFile === hasJobDescriptionText) {
+			new Notice("Choose either a Job Description file or paste Job Description text.");
+			return;
+		}
 		if (this.dateApplied.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(this.dateApplied.trim())) {
 			new Notice("Please select a valid date for Date Applied.");
 			return;

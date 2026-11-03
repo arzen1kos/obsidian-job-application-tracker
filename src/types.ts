@@ -132,6 +132,7 @@ export interface JobApplication {
 	role: string;
 	status: JobStatus;
 	dateApplied: string; // YYYY-MM-DD
+	datePosted?: string; // YYYY-MM-DD
 	lastUpdated: string; // YYYY-MM-DD
 	location?: string;
 	workplaceType?: WorkplaceType;
@@ -187,6 +188,7 @@ export interface JobApplicationFrontMatter {
 	role?: string;
 	status?: JobStatus;
 	dateApplied?: string;
+	datePosted?: string;
 	lastUpdated?: string;
 	location?: string;
 	workplaceType?: WorkplaceType;

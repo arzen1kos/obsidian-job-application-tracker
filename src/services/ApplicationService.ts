@@ -98,6 +98,7 @@ export class ApplicationService {
 		if (fields.applicationFolderPath !== undefined) fm.applicationFolderPath = fields.applicationFolderPath;
 		if (fields.artefacts !== undefined) fm.artefacts = fields.artefacts;
 		if (fields.dateApplied !== undefined) fm.dateApplied = fields.dateApplied;
+		if (fields.datePosted !== undefined) fm.datePosted = fields.datePosted;
 		if (fields.jobDescriptionFile !== undefined) fm.jobDescriptionFile = fields.jobDescriptionFile;
 		if (fields.contacts !== undefined) fm.contacts = fields.contacts;
 		if (fields.interviews !== undefined) fm.interviews = fields.interviews;
@@ -602,7 +603,7 @@ export class ApplicationService {
 		const location = escapeMarkdown(appData.location) || "Not specified";
 		const closingDate = escapeMarkdown(appData.closingDate) || "Not specified";
 		const tags = (appData.tags || []).map((tag) => `#${escapeMarkdown(tag)}`).join(", ") || "None";
-		return `# ${company} - ${role}\n\n- **Company:** ${company}\n- **Role:** ${role}\n- **Location:** ${location}\n- **Closing Date:** ${closingDate}\n- **Tags:** ${tags}\n`;
+		return `# ${role} - ${company}\n\n- **Company:** ${company}\n- **Role:** ${role}\n- **Location:** ${location}\n- **Closing Date:** ${closingDate}\n- **Tags:** ${tags}\n`;
 	}
 
 	private async createStandardNote(folderPath: string, preferredName: string, content: string): Promise<TFile> {
@@ -690,6 +691,7 @@ export class ApplicationService {
 		role: string;
 		status?: JobStatus;
 		dateApplied?: string;
+		datePosted?: string;
 		location?: string;
 		workplaceType?: WorkplaceType;
 		employmentType?: EmploymentType;
@@ -707,30 +709,53 @@ export class ApplicationService {
 		tags?: string[];
 	}): Promise<TFile> {
 		try {
+			const jobDescriptionArtefacts = (data.artefacts || []).filter((artefact) => artefact.type === "Job Description");
+			const jobDescriptionPath = data.jobDescriptionFile?.trim()
+				|| jobDescriptionArtefacts[0]?.path;
+			const hasJobDescriptionFile = !!jobDescriptionPath;
+			const hasJobDescriptionText = !!data.jobDescription?.trim();
+			const jobDescriptionPaths = new Set([
+				...(data.jobDescriptionFile?.trim() ? [data.jobDescriptionFile.trim()] : []),
+				...jobDescriptionArtefacts.map((artefact) => artefact.path),
+			]);
+			if (jobDescriptionArtefacts.length > 1 || jobDescriptionPaths.size > 1 || hasJobDescriptionFile === hasJobDescriptionText) {
+				throw new Error("Choose either a Job Description file or pasted Job Description text.");
+			}
 			const folderPath = normalizePath(this.plugin.settings.trackerFolderPath);
 			await this.ensureFolder(folderPath);
 
 			const today = this.getTodayDateString();
 			const status = data.status || this.plugin.settings.defaultStatus || "Applied";
-			const dateApplied = data.dateApplied || today;
+			const dateApplied = data.dateApplied || (status === "Applied" ? today : "");
 
-			let baseFileName = this.sanitizeFileName(`${data.company} - ${data.role}`);
+			let baseFileName = this.sanitizeFileName(`${data.role} - ${data.company}`);
 			if (baseFileName.length > 180) {
 				baseFileName = baseFileName.substring(0, 180).trim();
 			}
 
-			const applicationFolderPath = normalizePath(`${folderPath}/${baseFileName}`);
+			let applicationFolderPath = normalizePath(`${folderPath}/${baseFileName}`);
+			let folderCounter = 2;
+			while (this.app.vault.getAbstractFileByPath(applicationFolderPath)) {
+				applicationFolderPath = normalizePath(`${folderPath}/${baseFileName} (${folderCounter})`);
+				folderCounter++;
+			}
 			await this.ensureFolder(applicationFolderPath);
-			const artefactFolderPath = data.applicationFolderPath && !isAbsoluteFilePath(data.applicationFolderPath)
-				? normalizePath(data.applicationFolderPath)
-				: applicationFolderPath;
-			await this.ensureFolder(artefactFolderPath);
-			let filePath = `${applicationFolderPath}/${baseFileName}.md`;
-			let counter = 1;
-
-			while (this.app.vault.getAbstractFileByPath(filePath) != null && counter < 1000) {
-				filePath = `${applicationFolderPath}/${baseFileName} (${counter}).md`;
-				counter++;
+			const filePath = `${applicationFolderPath}/Application.md`;
+			const artefactFolderPath = applicationFolderPath;
+			const artefacts = (data.artefacts || []).filter((artefact) => artefact.type !== "Job Description");
+			if (jobDescriptionPath) {
+				const existingDescription = jobDescriptionArtefacts.find((artefact) => artefact.path === jobDescriptionPath);
+				const descriptionArtefact: ApplicationArtefact = existingDescription
+					? { ...existingDescription, path: jobDescriptionPath, filename: jobDescriptionPath.split(/[\\/]/).pop() || jobDescriptionPath }
+					: {
+						id: crypto.randomUUID(),
+						type: "Job Description",
+						path: jobDescriptionPath,
+						filename: jobDescriptionPath.split(/[\\/]/).pop() || jobDescriptionPath,
+						createdAt: new Date().toISOString(),
+						updatedAt: new Date().toISOString(),
+					};
+				artefacts.push(descriptionArtefact);
 			}
 
 			const initialStatusHistory: StatusHistoryEntry[] = [
@@ -747,6 +772,7 @@ export class ApplicationService {
 				role: data.role,
 				status: status,
 				dateApplied: dateApplied,
+				datePosted: data.datePosted || today,
 				lastUpdated: today,
 				location: data.location || "",
 				workplaceType: data.workplaceType || undefined,
@@ -756,15 +782,9 @@ export class ApplicationService {
 				source: data.source || "",
 				followUpDate: data.followUpDate || undefined,
 				closingDate: data.closingDate || undefined,
-				applicationFolderPath: data.applicationFolderPath
-					? (isAbsoluteFilePath(data.applicationFolderPath) ? data.applicationFolderPath : normalizePath(data.applicationFolderPath))
-					: applicationFolderPath,
-				artefacts: data.artefacts?.length
-					? data.artefacts
-					: data.jobDescriptionFile
-						? this.parseArtefactReferences(`Job Description | ${data.jobDescriptionFile}`)
-						: [],
-				jobDescriptionFile: data.jobDescriptionFile || "",
+				applicationFolderPath,
+				artefacts,
+				jobDescriptionFile: jobDescriptionPath || "",
 				tags: [...new Set(["job-application", ...(data.tags || [])])],
 				contacts: data.contacts || [],
 				interviews: [],
@@ -913,6 +933,7 @@ export class ApplicationService {
 			role,
 			status,
 			dateApplied: typeof rawFrontmatter.dateApplied === "string" ? rawFrontmatter.dateApplied : "",
+			datePosted: typeof rawFrontmatter.datePosted === "string" ? rawFrontmatter.datePosted : undefined,
 			lastUpdated: typeof rawFrontmatter.lastUpdated === "string" ? rawFrontmatter.lastUpdated : "",
 			location: typeof rawFrontmatter.location === "string" ? rawFrontmatter.location : "",
 			workplaceType: typeof rawFrontmatter.workplaceType === "string" ? (rawFrontmatter.workplaceType as WorkplaceType) : undefined,
