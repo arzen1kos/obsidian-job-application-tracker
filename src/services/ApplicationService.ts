@@ -1,5 +1,5 @@
 import { App, Notice, TFile, TFolder, normalizePath, stringifyYaml } from "obsidian";
-import { Contact, EmploymentType, InterviewRound, InterviewRoundType, JobApplication, JobApplicationFrontMatter, JobStatus, StatusHistoryEntry, WorkplaceType, isFinalStatus } from "../types";
+import { ApplicationArtefact, ArtefactType, Contact, EmploymentType, InterviewRound, InterviewRoundType, JobApplication, JobApplicationFrontMatter, JobStatus, StatusHistoryEntry, WorkplaceType, isFinalStatus } from "../types";
 import JobApplicationTrackerPlugin from "../main";
 
 /**
@@ -60,9 +60,11 @@ export class ApplicationService {
 	private readonly plugin: JobApplicationTrackerPlugin;
 	private fileLocks = new Map<string, Promise<void>>();
 	private cachedApplications: JobApplication[] | null = null;
+	private cachedArtefacts = new Map<string, ApplicationArtefact[]>();
 
 	invalidateCache(): void {
 		this.cachedApplications = null;
+		this.cachedArtefacts.clear();
 	}
 
 	/**
@@ -88,6 +90,9 @@ export class ApplicationService {
 		if (fields.jobUrl !== undefined) fm.jobUrl = fields.jobUrl;
 		if (fields.source !== undefined) fm.source = fields.source;
 		if (fields.followUpDate !== undefined) fm.followUpDate = fields.followUpDate;
+		if (fields.closingDate !== undefined) fm.closingDate = fields.closingDate;
+		if (fields.applicationFolderPath !== undefined) fm.applicationFolderPath = fields.applicationFolderPath;
+		if (fields.artefacts !== undefined) fm.artefacts = fields.artefacts;
 		if (fields.dateApplied !== undefined) fm.dateApplied = fields.dateApplied;
 		if (fields.jobDescriptionFile !== undefined) fm.jobDescriptionFile = fields.jobDescriptionFile;
 		if (fields.contacts !== undefined) fm.contacts = fields.contacts;
@@ -213,6 +218,194 @@ export class ApplicationService {
 		return `${year}-${month}-${day}`;
 	}
 
+	parseArtefactReferences(value: string, existing: ApplicationArtefact[] = []): ApplicationArtefact[] {
+		const now = new Date().toISOString();
+		const supportedTypes: ArtefactType[] = [
+			"Job Description", "CV", "Cover Letter", "Interview Notes", "Recruiter Notes",
+			"Follow-up Notes", "General Notes", "Portfolio", "Assessment", "Offer Letter",
+			"Contract", "Custom",
+		];
+		const artefacts: ApplicationArtefact[] = [];
+		for (const line of value.split(/\r?\n/)) {
+			const [rawType, ...pathParts] = line.split("|");
+			const path = normalizePath((pathParts.length ? pathParts.join("|") : rawType).trim());
+			if (!path) continue;
+			const requestedType = pathParts.length ? rawType.trim() : "";
+			const type = supportedTypes.find((item) => item.toLowerCase() === requestedType.toLowerCase())
+				|| this.inferArtefactType(path);
+			const previous = existing.find((item) => normalizePath(item.path) === path && item.type === type);
+			artefacts.push({
+				id: previous?.id || crypto.randomUUID(),
+				type,
+				path,
+				filename: path.split("/").pop() || path,
+				createdAt: previous?.createdAt || now,
+				updatedAt: previous?.updatedAt || now,
+			});
+		}
+		return artefacts;
+	}
+
+	isReferencedPath(path: string): boolean {
+		const normalized = normalizePath(path);
+		return this.getAllApplications().some((application) => {
+			return this.applicationReferencesPath(application, normalized);
+		});
+	}
+
+	private applicationReferencesPath(application: JobApplication, path: string): boolean {
+		const normalized = normalizePath(path);
+		const references = [
+			application.applicationFolderPath,
+			application.jobDescriptionFile,
+			...(application.artefacts || []).map((artefact) => artefact.path),
+		].filter((reference): reference is string => !!reference).map(normalizePath);
+		return references.some((reference) =>
+			reference === normalized ||
+			reference.startsWith(normalized + "/") ||
+			normalized.startsWith(reference + "/")
+		);
+	}
+
+	private inferArtefactType(path: string): ArtefactType {
+		const name = path.split("/").pop()?.toLowerCase() || "";
+		if (/\b(job[ -]?description|jd)\b/.test(name)) return "Job Description";
+		if (/\b(cv|resume|résumé)\b/.test(name)) return "CV";
+		if (/\bcover[ -]?letter\b/.test(name)) return "Cover Letter";
+		if (/\binterview\b/.test(name)) return "Interview Notes";
+		if (/\brecruiter\b/.test(name)) return "Recruiter Notes";
+		if (/\bfollow[ -]?up\b/.test(name)) return "Follow-up Notes";
+		if (/\bportfolio\b/.test(name)) return "Portfolio";
+		if (/\bassessment|test|challenge\b/.test(name)) return "Assessment";
+		if (/\boffer\b/.test(name)) return "Offer Letter";
+		if (/\bcontract\b/.test(name)) return "Contract";
+		if (name.endsWith(".md")) return "General Notes";
+		return "Custom";
+	}
+
+	getApplicationArtefacts(application: JobApplication): ApplicationArtefact[] {
+		const cached = this.cachedArtefacts.get(application.filePath);
+		if (cached) return cached;
+		const byPath = new Map<string, ApplicationArtefact>();
+		const persisted = application.artefacts || [];
+		for (const artefact of persisted) {
+			if (artefact && typeof artefact.path === "string" && artefact.path) {
+				const path = normalizePath(artefact.path);
+				const file = this.resolveFile(path);
+				byPath.set(path, {
+					...artefact,
+					path,
+					filename: artefact.filename || path.split("/").pop() || path,
+					exists: file instanceof TFile,
+				});
+			}
+		}
+
+		if (application.jobDescriptionFile) {
+			const path = normalizePath(application.jobDescriptionFile);
+			if (!byPath.has(path)) {
+				const file = this.resolveFile(path);
+				byPath.set(path, {
+					id: `legacy-jd-${path}`,
+					type: "Job Description",
+					path,
+					filename: path.split("/").pop() || path,
+					createdAt: "",
+					updatedAt: "",
+					exists: file instanceof TFile,
+				});
+			}
+		}
+
+		const folderPath = normalizePath(application.applicationFolderPath || "");
+		if (folderPath) {
+			const folder = this.app.vault.getAbstractFileByPath(folderPath);
+			if (folder instanceof TFolder) {
+				for (const file of this.app.vault.getFiles()) {
+					if (
+						file.path.startsWith(folderPath + "/") &&
+						file.path !== application.filePath &&
+						!byPath.has(file.path)
+					) {
+						const date = (timestamp: number) => timestamp ? new Date(timestamp).toISOString() : "";
+						byPath.set(file.path, {
+							id: file.path,
+							type: this.inferArtefactType(file.path),
+							path: file.path,
+							filename: file.name,
+							createdAt: date(file.stat.ctime),
+							updatedAt: date(file.stat.mtime),
+							exists: true,
+						});
+					}
+				}
+			}
+		}
+		const artefacts = [...byPath.values()].sort((a, b) => a.filename.localeCompare(b.filename));
+		this.cachedArtefacts.set(application.filePath, artefacts);
+		return artefacts;
+	}
+
+	async handleFileRename(newPath: string, oldPath: string): Promise<void> {
+		const oldNormalized = normalizePath(oldPath);
+		const newNormalized = normalizePath(newPath);
+		const replacePath = (path: string): string => {
+			const normalized = normalizePath(path);
+			return normalized === oldNormalized || normalized.startsWith(oldNormalized + "/")
+				? newNormalized + normalized.slice(oldNormalized.length)
+				: normalized;
+		};
+		try {
+			for (const application of this.getAllApplications(true)) {
+				if (!this.applicationReferencesPath(application, oldNormalized)) continue;
+				const file = this.resolveFile(application.filePath);
+				if (!(file instanceof TFile)) continue;
+				let changed = false;
+				await this.app.fileManager.processFrontMatter(file, (fm: JobApplicationFrontMatter) => {
+					if (typeof fm.applicationFolderPath === "string") {
+						const updatedPath = replacePath(fm.applicationFolderPath);
+						if (updatedPath !== fm.applicationFolderPath) {
+							fm.applicationFolderPath = updatedPath;
+							changed = true;
+						}
+					}
+					if (typeof fm.jobDescriptionFile === "string") {
+						const updatedPath = replacePath(fm.jobDescriptionFile);
+						if (updatedPath !== fm.jobDescriptionFile) {
+							fm.jobDescriptionFile = updatedPath;
+							changed = true;
+						}
+					}
+					if (Array.isArray(fm.artefacts)) {
+						for (const artefact of fm.artefacts) {
+							if (artefact && typeof artefact.path === "string") {
+								const updatedPath = replacePath(artefact.path);
+								if (updatedPath !== artefact.path) {
+									artefact.path = updatedPath;
+									artefact.filename = updatedPath.split("/").pop() || updatedPath;
+									artefact.updatedAt = new Date().toISOString();
+									changed = true;
+								}
+							}
+						}
+					}
+				});
+				if (changed) {
+					await this.app.vault.process(file, (content) =>
+						content.replace(/(!?\[\[)([^\]|#]+)([^\]]*\]\])/g, (match, prefix: string, target: string, suffix: string) => {
+							const updatedPath = replacePath(target);
+							return updatedPath === normalizePath(target) ? match : `${prefix}${updatedPath}${suffix}`;
+						})
+					);
+					this.invalidateCache();
+				}
+			}
+		} catch (err) {
+			console.error("Job Tracker: Failed to update linked paths after rename:", err);
+			new Notice("Could not update all linked artefact paths after a rename. Check the console for details.");
+		}
+	}
+
 	/**
 	 * Inserts an entry into the Notes & Activity Log section, or appends the section at the end of the note if missing.
 	 */
@@ -314,6 +507,8 @@ export class ApplicationService {
 		if (data.employmentType) sec += `- **Employment Type:** ${escapeMarkdown(data.employmentType)}\n`;
 		if (data.source) sec += `- **Source:** ${escapeMarkdown(data.source)}\n`;
 		if (data.followUpDate) sec += `- **Follow-up / Deadline:** ${escapeMarkdown(data.followUpDate)}\n`;
+		if (data.closingDate) sec += `- **Closing Date:** ${escapeMarkdown(data.closingDate)}\n`;
+		if (data.applicationFolderPath) sec += `- **Application Folder:** [[${data.applicationFolderPath}]]\n`;
 		if (data.jobUrl) {
 			const safeJobUrl = sanitizeUrl(data.jobUrl);
 			if (safeJobUrl) {
@@ -395,6 +590,9 @@ export class ApplicationService {
 		jobUrl?: string;
 		source?: string;
 		followUpDate?: string;
+		closingDate?: string;
+		applicationFolderPath?: string;
+		artefacts?: ApplicationArtefact[];
 		notes?: string;
 		jobDescription?: string;
 		jobDescriptionFile?: string;
@@ -442,6 +640,9 @@ export class ApplicationService {
 				jobUrl: data.jobUrl || "",
 				source: data.source || "",
 				followUpDate: data.followUpDate || undefined,
+				closingDate: data.closingDate || undefined,
+				applicationFolderPath: data.applicationFolderPath ? normalizePath(data.applicationFolderPath) : undefined,
+				artefacts: data.artefacts || (data.jobDescriptionFile ? this.parseArtefactReferences(`Job Description | ${data.jobDescriptionFile}`) : []),
 				jobDescriptionFile: data.jobDescriptionFile || "",
 				tags: ["job-application"],
 				contacts: data.contacts || [],
@@ -575,6 +776,11 @@ export class ApplicationService {
 			jobUrl: typeof rawFrontmatter.jobUrl === "string" ? rawFrontmatter.jobUrl : "",
 			source: typeof rawFrontmatter.source === "string" ? rawFrontmatter.source : "",
 			followUpDate: typeof rawFrontmatter.followUpDate === "string" ? rawFrontmatter.followUpDate : undefined,
+			closingDate: typeof rawFrontmatter.closingDate === "string" ? rawFrontmatter.closingDate : undefined,
+			applicationFolderPath: typeof rawFrontmatter.applicationFolderPath === "string" ? rawFrontmatter.applicationFolderPath : undefined,
+			artefacts: Array.isArray(rawFrontmatter.artefacts) ? rawFrontmatter.artefacts.filter((item): item is ApplicationArtefact =>
+				!!item && typeof item === "object" && typeof (item as ApplicationArtefact).path === "string"
+			) : [],
 			jobDescriptionFile: typeof rawFrontmatter.jobDescriptionFile === "string" ? rawFrontmatter.jobDescriptionFile : "",
 			contacts,
 			interviews,
@@ -707,6 +913,8 @@ export class ApplicationService {
 						employmentType: fm.employmentType,
 						source: fm.source,
 						followUpDate: fm.followUpDate,
+						closingDate: fm.closingDate,
+						applicationFolderPath: fm.applicationFolderPath,
 						jobUrl: fm.jobUrl,
 						dateApplied: fm.dateApplied,
 						jobDescriptionFile: fm.jobDescriptionFile,
@@ -1218,4 +1426,3 @@ export class ApplicationService {
 		});
 	}
 }
-

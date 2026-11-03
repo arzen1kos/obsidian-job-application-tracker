@@ -67,6 +67,46 @@ export type WorkplaceType = "Remote" | "Hybrid" | "On-site";
 
 export type EmploymentType = "Full-time" | "Contract" | "Part-time" | "Internship";
 
+export type ArtefactType =
+	| "Job Description"
+	| "CV"
+	| "Cover Letter"
+	| "Interview Notes"
+	| "Recruiter Notes"
+	| "Follow-up Notes"
+	| "General Notes"
+	| "Portfolio"
+	| "Assessment"
+	| "Offer Letter"
+	| "Contract"
+	| "Custom";
+
+export interface ApplicationArtefact {
+	id: string;
+	type: ArtefactType;
+	path: string;
+	filename: string;
+	createdAt: string;
+	updatedAt: string;
+	exists?: boolean;
+}
+
+export type DeadlineStatus = "overdue" | "within-7-days" | "within-14-days" | "later" | "none";
+
+export function getDeadlineStatus(date?: string, now = new Date()): DeadlineStatus {
+	if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return "none";
+	const [year, month, day] = date.split("-").map(Number);
+	const normalizedDate = new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10);
+	if (normalizedDate !== date) return "none";
+	const deadline = Date.UTC(year, month - 1, day);
+	const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+	const daysRemaining = Math.round((deadline - today) / 86400000);
+	if (daysRemaining < 0) return "overdue";
+	if (daysRemaining <= 7) return "within-7-days";
+	if (daysRemaining <= 14) return "within-14-days";
+	return "later";
+}
+
 export interface JobApplication {
 	filePath: string;
 	company: string;
@@ -81,6 +121,9 @@ export interface JobApplication {
 	jobUrl?: string;
 	source?: string; // e.g. "LinkedIn", "Referral", "Indeed", "Company Site"
 	followUpDate?: string; // YYYY-MM-DD
+	closingDate?: string; // YYYY-MM-DD
+	applicationFolderPath?: string;
+	artefacts: ApplicationArtefact[];
 	contacts: Contact[];
 	interviews: InterviewRound[];
 	statusHistory: StatusHistoryEntry[];
@@ -115,6 +158,9 @@ export interface JobApplicationFrontMatter {
 	jobUrl?: string;
 	source?: string;
 	followUpDate?: string;
+	closingDate?: string;
+	applicationFolderPath?: string;
+	artefacts?: ApplicationArtefact[];
 	jobDescriptionFile?: string;
 	tags?: string[];
 	contacts?: Contact[];
@@ -130,4 +176,5 @@ export interface JobApplicationFrontMatter {
 	| "salary"
 	| "source"
 	| "lastUpdated"
-	| "followUpDate";
+	| "followUpDate"
+	| "closingDate";

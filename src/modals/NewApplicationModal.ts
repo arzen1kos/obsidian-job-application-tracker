@@ -21,6 +21,9 @@ export class NewApplicationModal extends Modal {
 	private jobUrl = "";
 	private source = "";
 	private followUpDate = "";
+	private closingDate = "";
+	private applicationFolderPath = "";
+	private artefactReferences = "";
 	private notes = "";
 	private recruiterName = "";
 	private recruiterEmail = "";
@@ -179,6 +182,16 @@ export class NewApplicationModal extends Modal {
 				});
 			});
 
+		new Setting(contentEl)
+			.setName("Closing Date")
+			.setDesc("Application deadline (used for dashboard reminders)")
+			.addText((text) => {
+				text.inputEl.type = "date";
+				text.setValue(this.closingDate).onChange((value) => {
+					this.closingDate = value;
+				});
+			});
+
 		// Recruiter Name & Email
 		contentEl.createEl("h3", { text: "Contact Information" });
 		new Setting(contentEl)
@@ -214,25 +227,24 @@ export class NewApplicationModal extends Modal {
 				text.inputEl.rows = 3;
 			});
 
-		// Job Description Attachment
-		let uploadedFile: File | null = null;
-		let existingVaultPath = "";
-
+		contentEl.createEl("h3", { text: "Application Folder & Artefacts" });
 		new Setting(contentEl)
-			.setName("Attach Job Description File")
-			.setDesc("Upload a PDF, Markdown, or text file")
-			.then((setting) => {
-				const input = setting.controlEl.createEl("input", {
-					type: "file",
-					cls: "job-tracker-file-input",
-					attr: { accept: ".pdf,.md,.txt" },
+			.setName("Application Folder")
+			.setDesc("Optional vault-relative folder. Files remain where you organise them.")
+			.addText((text) => {
+				text.setPlaceholder("Applications/Company - Role").onChange((value) => {
+					this.applicationFolderPath = value.trim();
 				});
-				input.onchange = () => {
-					if (input.files && input.files[0]) {
-						uploadedFile = input.files[0];
-						new Notice(`Attached file: ${uploadedFile.name}`);
-					}
-				};
+			});
+		new Setting(contentEl)
+			.setName("Linked Artefact Paths")
+			.setDesc("Optional vault-relative paths, one per line. Use “Type | path” to choose a type.")
+			.addTextArea((text) => {
+				text.setPlaceholder("Job Description | Applications/Company - Role/JD.pdf\nCV | Applications/Company - Role/CV.docx")
+					.onChange((value) => {
+						this.artefactReferences = value;
+					});
+				text.inputEl.rows = 3;
 			});
 
 		// Or paste plain text JD
@@ -259,7 +271,7 @@ export class NewApplicationModal extends Modal {
 					.onClick(async () => {
 						submitBtn.setDisabled(true);
 						try {
-							await this.handleSubmit(uploadedFile, existingVaultPath, jobDescriptionText);
+							await this.handleSubmit(jobDescriptionText);
 						} finally {
 							submitBtn.setDisabled(false);
 						}
@@ -272,11 +284,7 @@ export class NewApplicationModal extends Modal {
 			);
 	}
 
-	private async handleSubmit(
-		uploadedFile: File | null,
-		existingVaultPath: string,
-		jobDescriptionText: string
-	): Promise<void> {
+	private async handleSubmit(jobDescriptionText: string): Promise<void> {
 		if (!this.company.trim()) {
 			new Notice("Please enter a company name.");
 			this.companyInputEl?.focus();
@@ -295,6 +303,10 @@ export class NewApplicationModal extends Modal {
 			new Notice("Please select a valid date for Follow-up Date.");
 			return;
 		}
+		if (this.closingDate.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(this.closingDate.trim())) {
+			new Notice("Please select a valid date for Closing Date.");
+			return;
+		}
 		if (this.recruiterEmail.trim() && !sanitizeEmail(this.recruiterEmail.trim())) {
 			new Notice("Please enter a valid email address for the contact.");
 			return;
@@ -305,15 +317,6 @@ export class NewApplicationModal extends Modal {
 		}
 
 		try {
-			let attachmentPath = existingVaultPath || "";
-			if (uploadedFile) {
-				const savedFile = await this.plugin.appService.saveAttachment(
-					uploadedFile,
-					`${this.company.trim()} - ${this.role.trim()}`
-				);
-				attachmentPath = savedFile.path;
-			}
-
 			const contacts: Contact[] = [];
 			if (this.recruiterName.trim()) {
 				contacts.push({
@@ -336,9 +339,13 @@ export class NewApplicationModal extends Modal {
 				jobUrl: this.jobUrl.trim(),
 				source: this.source.trim(),
 				followUpDate: this.followUpDate.trim() || undefined,
+				closingDate: this.closingDate.trim() || undefined,
+				applicationFolderPath: this.applicationFolderPath.trim() || undefined,
 				notes: this.notes.trim(),
 				jobDescription: jobDescriptionText.trim() || undefined,
-				jobDescriptionFile: attachmentPath || undefined,
+				artefacts: this.plugin.appService.parseArtefactReferences(this.artefactReferences),
+				jobDescriptionFile: this.plugin.appService.parseArtefactReferences(this.artefactReferences)
+					.find((artefact) => artefact.type === "Job Description")?.path,
 				contacts: contacts,
 			});
 

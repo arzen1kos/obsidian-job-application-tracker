@@ -20,8 +20,9 @@ export class EditApplicationModal extends BaseApplicationModal {
 	private jobUrl = "";
 	private source = "";
 	private followUpDate = "";
-	private jobDescriptionFile = "";
-	private uploadedFile: File | null = null;
+	private closingDate = "";
+	private applicationFolderPath = "";
+	private artefactReferences = "";
 	private newJobDescriptionText = "";
 
 	private companyInputEl: HTMLInputElement | null = null;
@@ -55,7 +56,20 @@ export class EditApplicationModal extends BaseApplicationModal {
 		this.jobUrl = app.jobUrl || "";
 		this.source = app.source || "";
 		this.followUpDate = app.followUpDate || "";
-		this.jobDescriptionFile = app.jobDescriptionFile || "";
+		this.closingDate = app.closingDate || "";
+		this.applicationFolderPath = app.applicationFolderPath || "";
+		const artefacts = [...(app.artefacts || [])];
+		if (app.jobDescriptionFile && !artefacts.some((item) => item.path === app.jobDescriptionFile)) {
+			artefacts.push({
+				id: `legacy-jd-${app.jobDescriptionFile}`,
+				type: "Job Description",
+				path: app.jobDescriptionFile,
+				filename: app.jobDescriptionFile.split("/").pop() || app.jobDescriptionFile,
+				createdAt: "",
+				updatedAt: "",
+			});
+		}
+		this.artefactReferences = artefacts.map((item) => `${item.type} | ${item.path}`).join("\n");
 	}
 
 	renderContent(): void {
@@ -210,37 +224,38 @@ export class EditApplicationModal extends BaseApplicationModal {
 				});
 			});
 
-		// Job Description Attachment Section
-		contentEl.createEl("h3", { text: "Job Description" });
-
-		if (this.jobDescriptionFile) {
-			new Setting(contentEl)
-				.setName("Current Attachment")
-				.setDesc(this.jobDescriptionFile)
-				.addButton((btn) =>
-					btn.setButtonText("Remove File").onClick(() => {
-						this.jobDescriptionFile = "";
-						this.renderContent();
-					})
-				);
-		} else {
-			new Setting(contentEl)
-				.setName("Attach Job Description File")
-				.setDesc("Upload a PDF or Markdown job spec")
-				.then((setting) => {
-					const input = setting.controlEl.createEl("input", {
-						type: "file",
-						cls: "job-tracker-file-input",
-						attr: { accept: ".pdf,.md,.txt" },
-					});
-					input.onchange = () => {
-						if (input.files && input.files[0]) {
-							this.uploadedFile = input.files[0];
-							new Notice(`Attached file: ${this.uploadedFile.name}`);
-						}
-					};
+		new Setting(contentEl)
+			.setName("Closing Date")
+			.setDesc("Application deadline (used for dashboard reminders)")
+			.addText((text) => {
+				text.inputEl.type = "date";
+				text.setValue(this.closingDate).onChange((value) => {
+					this.closingDate = value;
 				});
-		}
+			});
+
+		contentEl.createEl("h3", { text: "Application Folder & Artefacts" });
+		new Setting(contentEl)
+			.setName("Application Folder")
+			.setDesc("Optional vault-relative folder. Files remain where you organise them.")
+			.addText((text) => {
+				text.setValue(this.applicationFolderPath)
+					.setPlaceholder("Applications/Company - Role")
+					.onChange((value) => {
+						this.applicationFolderPath = value.trim();
+					});
+			});
+		new Setting(contentEl)
+			.setName("Linked Artefact Paths")
+			.setDesc("One vault-relative path per line, formatted as “Type | path”.")
+			.addTextArea((text) => {
+				text.setValue(this.artefactReferences)
+					.setPlaceholder("CV | Applications/Company - Role/CV.docx")
+					.onChange((value) => {
+						this.artefactReferences = value;
+					});
+				text.inputEl.rows = 5;
+			});
 
 		// Or paste new JD text
 		new Setting(contentEl)
@@ -299,24 +314,23 @@ export class EditApplicationModal extends BaseApplicationModal {
 				new Notice("Please select a valid date for Follow-up Date.");
 				return;
 			}
+			if (this.closingDate.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(this.closingDate.trim())) {
+				new Notice("Please select a valid date for Closing Date.");
+				return;
+			}
 			if (this.jobUrl.trim() && !sanitizeUrl(this.jobUrl.trim())) {
 				new Notice("Job URL must begin with http:// or https://");
 				return;
-			}
-
-			let finalAttachmentPath = this.jobDescriptionFile;
-			if (this.uploadedFile) {
-				const saved = await this.plugin.appService.saveAttachment(
-					this.uploadedFile,
-					`${this.company.trim()} - ${this.role.trim()}`
-				);
-				finalAttachmentPath = saved.path;
 			}
 
 			const file = this.resolveApplicationFile();
 			if (!file) {
 				return;
 			}
+			const artefacts = this.plugin.appService.parseArtefactReferences(
+				this.artefactReferences,
+				this.application.artefacts
+			);
 
 			await this.plugin.appService.updateApplicationDetails(
 				file,
@@ -332,7 +346,10 @@ export class EditApplicationModal extends BaseApplicationModal {
 					jobUrl: this.jobUrl.trim(),
 					source: this.source.trim(),
 					followUpDate: this.followUpDate.trim() || undefined,
-					jobDescriptionFile: finalAttachmentPath || undefined,
+					closingDate: this.closingDate.trim() || undefined,
+					applicationFolderPath: this.applicationFolderPath.trim() || undefined,
+					artefacts,
+					jobDescriptionFile: artefacts.find((item) => item.type === "Job Description")?.path || "",
 				},
 				this.newJobDescriptionText ? this.newJobDescriptionText.trim() : undefined
 			);

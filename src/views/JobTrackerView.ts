@@ -8,7 +8,7 @@ import {
 	normalizePath,
 } from "obsidian";
 import JobApplicationTrackerPlugin from "../main";
-import { JobApplication, JobSortField, JobStatus } from "../types";
+import { getDeadlineStatus, JobApplication, JobSortField, JobStatus } from "../types";
 import { sanitizeUrl } from "../services/ApplicationService";
 import { VIEW_TYPE_JOB_TRACKER } from "../constants";
 import { NewApplicationModal } from "../modals/NewApplicationModal";
@@ -55,6 +55,7 @@ export class JobTrackerView extends ItemView {
 	private currentMode: TrackerViewMode = "kanban";
 	private searchQuery = "";
 	private statusFilter = "All";
+	private deadlineFilter = "All";
 	sortField: JobSortField = "dateApplied";
 	sortAscending = false;
 	applications: JobApplication[] = [];
@@ -75,6 +76,7 @@ export class JobTrackerView extends ItemView {
 	private modeButtons: { mode: TrackerViewMode; btn: HTMLButtonElement }[] = [];
 	private filterRowEl: HTMLElement | null = null;
 	private statusSelectEl: HTMLSelectElement | null = null;
+	private deadlineSelectEl: HTMLSelectElement | null = null;
 	private searchInputEl: HTMLInputElement | null = null;
 	private searchClearEl: HTMLElement | null = null;
 
@@ -125,14 +127,23 @@ export class JobTrackerView extends ItemView {
 		// Register vault & cache change listeners to auto-refresh view
 		// Only respond to changes within the application or interview folders
 		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				if (file instanceof TFile && (this.isTrackedFile(file) || this.isInLinkedApplicationFolder(file.path))) {
+					this.debouncedRefresh();
+				}
+			})
+		);
+		this.registerEvent(
 			this.app.vault.on("create", (file) => {
-				if (file instanceof TFile && file.extension === "md" && this.isTrackedFile(file)) this.debouncedRefresh();
+				if (file instanceof TFile && (this.isTrackedFile(file) || this.isInLinkedApplicationFolder(file.path))) {
+					this.debouncedRefresh();
+				}
 			})
 		);
 		this.registerEvent(
 			this.app.vault.on("delete", (file) => {
 				if (
-					(file instanceof TFile && file.extension === "md" && this.isTrackedFile(file)) ||
+					(file instanceof TFile && (this.isTrackedFile(file) || this.isInLinkedApplicationFolder(file.path))) ||
 					this.applications.some((a) => a.filePath === file.path || a.filePath.startsWith(file.path + "/"))
 				) {
 					this.debouncedRefresh();
@@ -143,8 +154,12 @@ export class JobTrackerView extends ItemView {
 			this.app.vault.on("rename", (file, oldPath) => {
 				const appFolder = normalizePath(this.plugin.settings.trackerFolderPath);
 				if (
-					(file instanceof TFile && file.extension === "md" && this.isTrackedFile(file)) ||
+					(file instanceof TFile && (this.isTrackedFile(file) || this.isInLinkedApplicationFolder(file.path))) ||
 					oldPath.startsWith(appFolder + "/") ||
+					this.isInLinkedApplicationFolder(oldPath) ||
+					this.isInLinkedApplicationFolder(file.path) ||
+					this.plugin.appService.isReferencedPath(oldPath) ||
+					this.plugin.appService.isReferencedPath(file.path) ||
 					this.applications.some((a) => a.filePath === oldPath || a.filePath.startsWith(oldPath + "/"))
 				) {
 					this.debouncedRefresh();
@@ -167,6 +182,10 @@ export class JobTrackerView extends ItemView {
 		return this.plugin.appService.isTrackedFile(file);
 	}
 
+	private isInLinkedApplicationFolder(path: string): boolean {
+		return this.plugin.appService.isReferencedPath(path);
+	}
+
 	async onClose() {
 		this.contentEl.empty();
 		this.headerEl = null;
@@ -174,6 +193,7 @@ export class JobTrackerView extends ItemView {
 		this.countBadgeEl = null;
 		this.filterRowEl = null;
 		this.statusSelectEl = null;
+		this.deadlineSelectEl = null;
 		this.searchInputEl = null;
 		this.searchClearEl = null;
 		this.modeButtons = [];
@@ -222,6 +242,9 @@ export class JobTrackerView extends ItemView {
 		}
 		if (this.searchClearEl) {
 			this.searchClearEl.toggleClass("job-tracker-is-hidden", !this.searchQuery);
+		}
+		if (this.deadlineSelectEl && this.deadlineSelectEl.value !== this.deadlineFilter) {
+			this.deadlineSelectEl.value = this.deadlineFilter;
 		}
 	}
 
@@ -350,6 +373,26 @@ export class JobTrackerView extends ItemView {
 			this.statusFilter = (e.target as HTMLSelectElement).value;
 			this.renderContentOnly();
 		};
+
+		this.deadlineSelectEl = this.filterRowEl.createEl("select", {
+			cls: "job-tracker-filter-select",
+			attr: { "aria-label": "Filter by closing date" },
+		});
+		for (const [value, label] of [
+			["All", "All Deadlines"],
+			["overdue", "Closing date passed"],
+			["within-7-days", "Due in 7 days"],
+			["within-14-days", "Due in 14 days"],
+			["later", "Due later"],
+			["none", "No closing date"],
+		]) {
+			const option = this.deadlineSelectEl.createEl("option", { value, text: label });
+			option.selected = this.deadlineFilter === value;
+		}
+		this.deadlineSelectEl.onchange = (e) => {
+			this.deadlineFilter = (e.target as HTMLSelectElement).value;
+			this.renderContentOnly();
+		};
 	}
 
 	renderContentOnly() {
@@ -384,6 +427,9 @@ export class JobTrackerView extends ItemView {
 		if (this.statusFilter !== "All") {
 			result = result.filter((a) => a.status === this.statusFilter);
 		}
+		if (this.deadlineFilter !== "All") {
+			result = result.filter((application) => getDeadlineStatus(application.closingDate) === this.deadlineFilter);
+		}
 
 		// Search filter
 		if (this.searchQuery.trim()) {
@@ -395,6 +441,8 @@ export class JobTrackerView extends ItemView {
 					(a.location && a.location.toLowerCase().includes(q)) ||
 					(a.source && a.source.toLowerCase().includes(q)) ||
 					(a.salary && a.salary.toLowerCase().includes(q)) ||
+					(a.applicationFolderPath && a.applicationFolderPath.toLowerCase().includes(q)) ||
+					this.plugin.appService.getApplicationArtefacts(a).some((item) => item.filename.toLowerCase().includes(q)) ||
 					(a.contacts?.some(
 						(c) =>
 							c.name.toLowerCase().includes(q) ||
@@ -426,6 +474,13 @@ export class JobTrackerView extends ItemView {
 				} else if (numB !== null) {
 					return this.sortAscending ? 1 : -1;
 				}
+			} else if (this.sortField === "closingDate") {
+				const dateA = a.closingDate || "";
+				const dateB = b.closingDate || "";
+				if (!dateA || !dateB) {
+					if (dateA !== dateB) return dateA ? -1 : 1;
+				}
+				if (dateA !== dateB) return this.sortAscending ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
 			}
 
 			const rawA = a[this.sortField];
@@ -492,6 +547,7 @@ export class JobTrackerView extends ItemView {
 		clearBtn.onclick = () => {
 			this.searchQuery = "";
 			this.statusFilter = "All";
+			this.deadlineFilter = "All";
 			this.render();
 		};
 	}

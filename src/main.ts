@@ -169,15 +169,31 @@ export default class JobApplicationTrackerPlugin extends Plugin {
 			})
 		);
 		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				if (
+					file instanceof TFile &&
+					(this.appService.isTrackedFile(file) || this.isInLinkedApplicationFolder(file.path))
+				) {
+					this.appService.invalidateCache();
+				}
+			})
+		);
+		this.registerEvent(
 			this.app.vault.on("create", (file) => {
-				if (file instanceof TFile && this.appService.isTrackedFile(file)) {
+				if (
+					file instanceof TFile &&
+					(this.appService.isTrackedFile(file) || this.isInLinkedApplicationFolder(file.path))
+				) {
 					this.appService.invalidateCache();
 				}
 			})
 		);
 		this.registerEvent(
 			this.app.vault.on("delete", (file) => {
-				if (file instanceof TFile && this.appService.isTrackedFile(file)) {
+				if (
+					file instanceof TFile &&
+					(this.appService.isTrackedFile(file) || this.isInLinkedApplicationFolder(file.path))
+				) {
 					this.appService.invalidateCache();
 				}
 			})
@@ -185,14 +201,24 @@ export default class JobApplicationTrackerPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on("rename", (file, oldPath) => {
 				const appFolder = normalizePath(this.settings.trackerFolderPath);
-				if (
-					(file instanceof TFile && this.appService.isTrackedFile(file)) ||
-					oldPath.startsWith(appFolder + "/")
-				) {
-					this.appService.invalidateCache();
-				}
+				const trackedRename = (file instanceof TFile && this.appService.isTrackedFile(file)) ||
+					oldPath.startsWith(appFolder + "/") ||
+					this.appService.isReferencedPath(oldPath) ||
+					this.appService.isReferencedPath(file.path);
+				if (!trackedRename) return;
+				void this.appService.handleFileRename(file.path, oldPath);
+				this.appService.invalidateCache();
 			})
 		);
+		this.registerInterval(window.setInterval(() => {
+			for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_JOB_TRACKER)) {
+				if (leaf.view instanceof JobTrackerView) leaf.view.loadAndRender();
+			}
+		}, 60 * 60 * 1000));
+	}
+
+	private isInLinkedApplicationFolder(path: string): boolean {
+		return this.appService.isReferencedPath(path);
 	}
 
 	async activateView(location?: "tab" | "right-sidebar" | "left-sidebar") {
