@@ -134,14 +134,14 @@ Open the Obsidian Command Palette (<kbd>Cmd</kbd> + <kbd>P</kbd> or <kbd>Ctrl</k
 Under **Settings** ➔ **Job Application Tracker**, you can configure:
 
 - **Applications Folder**: Target folder where application notes are created (default: `Applications`).
-- **Interview Notes Folder**: Subfolder for generated prep and debrief notes (default: `Applications/Interviews`).
+- The legacy interview-notes folder value remains loaded for existing installations but is no longer configurable.
 - **Attachments Folder**: Retained for compatibility with older versions; the filesystem-linking workflow does not write files there.
 - **Default View Location**: Main Tab (Center) or Sidebar when opening via ribbon icon or command.
 - **Default Initial Status**: Default stage for new applications (default: `Applied`).
 - **Application Sources**: Comma-separated list of sources (e.g. *LinkedIn, Referral, Company Website, Indeed, Wellfound, Otta*).
 - **Automatically move artefacts into application folder**: Move linked vault files into each new application folder (enabled by default). External files are not moved.
 - **Application tags**: Add, edit, reorder, and delete the selectable tag options used by application forms.
-- **Hidden table columns**: Restore hidden attributes from the setting or the Table view's Restore columns button.
+- **Table View Settings**: Show hidden columns individually or restore all columns; use the Table view's Restore columns button to show them all at once.
 - **Interview Prep Note Template**: Full Markdown template supporting placeholders:
   - `{{company}}`
   - `{{role}}`
@@ -203,7 +203,7 @@ Migration is additive and non-destructive:
 
 ### Dashboard and modal UX
 
-The application editor exposes Closing Date and a guided file/folder workflow using the platform file chooser, falling back to searchable Obsidian fuzzy modals when absolute paths are unavailable. Job Description is managed separately; generic artefacts use a type dropdown and support multiple links per type. Each linked file can be opened, revealed, changed/relinked, or unlinked without deleting it. A folder picker links an application folder, whose contents are displayed in separate Job Description, CV, Cover Letter, Interview Notes, and Other Artefacts groups. Table headers provide context-menu actions for hiding and sorting columns; hidden columns can be restored in the Table view or Settings. Gallery, Company, saved views, multi-field filters, and the complete Details pane are also available.
+The application editor exposes Closing Date and a guided file/folder workflow using the platform file chooser, falling back to searchable Obsidian fuzzy modals when absolute paths are unavailable. Job Description is managed separately; generic artefacts use a type dropdown and support multiple links per type. Each linked file can be opened, revealed, changed/relinked, or unlinked without deleting it. A folder picker links an application folder, whose contents are displayed in separate Job Description, CV, Cover Letter, Interview Notes, and Other Artefacts groups. Table view defaults to JD, Role, Company, Date Posted, Status, URL, Location, and Tags; additional columns can be restored in Table View Settings. Headers provide context-menu actions for hiding and sorting columns. Gallery, Company, saved views, multi-field filters, and the complete Details pane are also available.
 
 The reusable `ArtefactEditor` uses native `<input type="file">` and directory selection dialogs on desktop, with fuzzy vault selectors as a fallback. `NewApplicationModal` and `EditApplicationModal` persist links through `ApplicationService`; `ManageApplicationModal` presents grouped read-only links; and `TableRenderer` exposes human-friendly counts and quick navigation. A missing persisted link offers relinking and unlinking, while a folder-discovered item remains in the folder collection if its explicit reference is removed.
 

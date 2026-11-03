@@ -179,6 +179,7 @@ export interface JobApplicationTrackerSettings {
 	autoMoveArtefacts: boolean;
 	applicationTagOptions: string[];
 	hiddenTableColumns: string[];
+	tableColumnsInitialized: boolean;
 	savedViews: SavedTrackerView[];
 }
 
@@ -210,6 +211,9 @@ export interface JobApplicationFrontMatter {
 	| "company"
 	| "role"
 	| "status"
+	| "datePosted"
+	| "jobUrl"
+	| "tags"
 	| "folder"
 	| "jobDescription"
 	| "cvs"

@@ -3,6 +3,7 @@ import { getDeadlineStatus, JobApplication, JobSortField, isAbsoluteFilePath } f
 import { getStatusClassName } from "../../constants";
 import { UpdateStatusModal } from "../../modals/UpdateStatusModal";
 import { JobTrackerView } from "../JobTrackerView";
+import { sanitizeUrl } from "../../services/ApplicationService";
 
 /**
  * Renderer for the Table view mode, providing sortable columns, status badges, and action menus.
@@ -33,13 +34,17 @@ export class TableRenderer {
 		const thead = table.createEl("thead");
 		const headerRow = thead.createEl("tr");
 
-		const columns: { key: string; label: string; field?: JobSortField }[] = [
-			{ key: "company", label: "Company", field: "company" },
+		const columns: { key: string; label: string; field: JobSortField }[] = [
+			{ key: "jobDescription", label: "JD", field: "jobDescription" },
 			{ key: "role", label: "Role", field: "role" },
+			{ key: "company", label: "Company", field: "company" },
+			{ key: "datePosted", label: "Date Posted", field: "datePosted" },
 			{ key: "status", label: "Status", field: "status" },
+			{ key: "jobUrl", label: "URL", field: "jobUrl" },
+			{ key: "location", label: "Location", field: "location" },
+			{ key: "tags", label: "Tags", field: "tags" },
 			{ key: "closingDate", label: "Closing Date", field: "closingDate" },
 			{ key: "folder", label: "Folder", field: "folder" },
-			{ key: "jobDescription", label: "JD", field: "jobDescription" },
 			{ key: "cvs", label: "CVs", field: "cvs" },
 			{ key: "coverLetters", label: "Cover Letters", field: "coverLetters" },
 			{ key: "notes", label: "Notes", field: "notes" },
@@ -86,6 +91,7 @@ export class TableRenderer {
 					.onClick(() => {
 						if (!this.view.plugin.settings.hiddenTableColumns.includes(col.key)) {
 							this.view.plugin.settings.hiddenTableColumns.push(col.key);
+							this.view.plugin.settings.tableColumnsInitialized = true;
 							void this.view.plugin.saveSettings();
 						}
 						this.view.renderContentOnly();
@@ -115,6 +121,7 @@ export class TableRenderer {
 			});
 			restoreButton.onclick = () => {
 				this.view.plugin.settings.hiddenTableColumns = [];
+				this.view.plugin.settings.tableColumnsInitialized = true;
 				void this.view.plugin.saveSettings();
 				this.view.renderContentOnly();
 			};
@@ -133,6 +140,9 @@ export class TableRenderer {
 			};
 			const artefacts = this.view.plugin.appService.getApplicationArtefacts(app);
 
+			this.renderArtefactCell(tr.createEl("td"), artefacts.filter((item) => item.type === "Job Description"), "JD");
+			tr.createEl("td", { text: app.role || "—" });
+
 			// Company
 			const tdCompany = tr.createEl("td", { cls: "job-tracker-td-company" });
 			const cLink = tdCompany.createEl("a", {
@@ -148,8 +158,7 @@ export class TableRenderer {
 				}
 			};
 
-			// Role
-			tr.createEl("td", { text: app.role });
+			tr.createEl("td", { text: app.datePosted || "—", cls: app.datePosted ? "" : "text-muted" });
 
 			// Status Badge
 			const tdStatus = tr.createEl("td");
@@ -168,6 +177,14 @@ export class TableRenderer {
 				}
 			};
 
+			this.renderUrlCell(tr.createEl("td"), app.jobUrl);
+			tr.createEl("td", { text: app.location || "—", cls: app.location ? "" : "text-muted" });
+			const applicationTags = (app.tags || []).filter((tag) => tag !== "job-application");
+			tr.createEl("td", {
+				text: applicationTags.map((tag) => `#${tag}`).join(", ") || "—",
+				cls: applicationTags.length ? "job-tracker-table-tags" : "text-muted",
+			});
+
 			const deadlineCell = tr.createEl("td", {
 				text: app.closingDate || "—",
 				cls: `job-tracker-deadline-cell deadline-${deadlineStatus}`,
@@ -176,7 +193,6 @@ export class TableRenderer {
 			if (!app.closingDate) deadlineCell.addClass("text-muted");
 
 			this.renderFolderCell(tr.createEl("td"), app);
-			this.renderArtefactCell(tr.createEl("td"), artefacts.filter((item) => item.type === "Job Description"), "JD");
 			this.renderArtefactCell(tr.createEl("td"), artefacts.filter((item) => item.type === "CV"), "CV");
 			this.renderArtefactCell(tr.createEl("td"), artefacts.filter((item) => item.type === "Cover Letter"), "Cover Letter");
 			this.renderArtefactCell(
@@ -227,6 +243,19 @@ export class TableRenderer {
 				this.view.renderContentOnly();
 			};
 		}
+	}
+
+	private renderUrlCell(container: HTMLElement, rawUrl?: string): void {
+		const url = sanitizeUrl(rawUrl);
+		if (!url) {
+			container.createSpan({ text: "—", cls: "text-muted" });
+			return;
+		}
+		const link = container.createEl("a", {
+			text: new URL(url).hostname,
+			attr: { href: url, target: "_blank", rel: "noopener noreferrer", "aria-label": `Open job posting: ${url}` },
+		});
+		link.onclick = (event) => event.stopPropagation();
 	}
 
 	private renderFolderCell(container: HTMLElement, app: JobApplication): void {

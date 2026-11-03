@@ -1,6 +1,6 @@
 import { Notice, Plugin, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 import { JobApplicationTrackerSettings, JobApplication } from "./types";
-import { DEFAULT_SETTINGS, VIEW_TYPE_JOB_TRACKER } from "./constants";
+import { DEFAULT_HIDDEN_TABLE_COLUMNS, DEFAULT_SETTINGS, VIEW_TYPE_JOB_TRACKER } from "./constants";
 import { ApplicationService } from "./services/ApplicationService";
 import { JobApplicationTrackerSettingTab } from "./settings/SettingsTab";
 import { NewApplicationModal } from "./modals/NewApplicationModal";
@@ -325,7 +325,10 @@ export default class JobApplicationTrackerPlugin extends Plugin {
 			applicationTagOptions: Array.isArray(data?.applicationTagOptions)
 				? [...data.applicationTagOptions]
 				: [...DEFAULT_SETTINGS.applicationTagOptions],
-			hiddenTableColumns: Array.isArray(data?.hiddenTableColumns) ? [...data.hiddenTableColumns] : [],
+			hiddenTableColumns: data?.tableColumnsInitialized
+				? (Array.isArray(data.hiddenTableColumns) ? [...data.hiddenTableColumns] : [])
+				: [...new Set([...DEFAULT_HIDDEN_TABLE_COLUMNS, ...(Array.isArray(data?.hiddenTableColumns) ? data.hiddenTableColumns : [])])],
+			tableColumnsInitialized: data?.tableColumnsInitialized ?? false,
 			savedViews: Array.isArray(data?.savedViews) ? data.savedViews : [],
 		};
 	}

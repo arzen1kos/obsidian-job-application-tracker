@@ -35,6 +35,15 @@ export const DEFAULT_SOURCE_OPTIONS: string[] = [
 	"Other",
 ];
 
+export const DEFAULT_HIDDEN_TABLE_COLUMNS = [
+	"closingDate",
+	"folder",
+	"cvs",
+	"coverLetters",
+	"notes",
+	"artefacts",
+];
+
 export const DEFAULT_INTERVIEW_PREP_TEMPLATE = `---
 type: interview-prep
 company: "{{company}}"
@@ -127,6 +136,7 @@ export const DEFAULT_SETTINGS: JobApplicationTrackerSettings = {
 	openViewLocation: "tab",
 	autoMoveArtefacts: true,
 	applicationTagOptions: ["Java", "TypeScript", "React", "Python", "AWS"],
-	hiddenTableColumns: [],
+	hiddenTableColumns: [...DEFAULT_HIDDEN_TABLE_COLUMNS],
+	tableColumnsInitialized: false,
 	savedViews: [],
 };
