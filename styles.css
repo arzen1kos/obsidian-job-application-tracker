@@ -1161,6 +1161,35 @@
 	margin-bottom: 16px;
 }
 
+.job-tracker-artefact-editor {
+	margin: 16px 0;
+	padding: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.job-tracker-artefact-editor h4 {
+	margin: 16px 0 6px;
+}
+
+.job-tracker-artefact-editor h4:first-child {
+	margin-top: 0;
+}
+
+.job-tracker-artefact-editor h5 {
+	margin: 12px 0 4px;
+	color: var(--text-muted);
+}
+
+.job-tracker-artefact-editor .setting-item {
+	padding: 8px 0;
+}
+
+.job-tracker-artefact-editor .setting-item-name {
+	overflow-wrap: anywhere;
+}
+
 .job-tracker-template-textarea {
 	font-family: var(--font-monospace);
 	font-size: 0.85em;

@@ -184,11 +184,11 @@ export class TableRenderer {
 		}
 		const folder = this.view.app.vault.getAbstractFileByPath(normalizePath(path));
 		if (!(folder instanceof TFolder)) {
-			container.createSpan({ text: `${path} (missing)`, cls: "job-tracker-missing-reference" });
+			container.createSpan({ text: "⚠ Missing folder", cls: "job-tracker-missing-reference", attr: { "aria-label": `Linked folder not found: ${path}` } });
 			return;
 		}
 		const link = container.createEl("button", {
-			text: path,
+			text: `📁 ${folder.name || "Open folder"}`,
 			cls: "job-tracker-folder-link",
 			attr: { "aria-label": `Open linked application folder ${path}` },
 		});
@@ -211,9 +211,9 @@ export class TableRenderer {
 		);
 		const latest = sorted[0];
 		const button = container.createEl("button", {
-			text: `${label} (${items.length})`,
+			text: `${items.some((item) => item.exists === false) ? "⚠ " : "✓ "}${label} (${items.length})`,
 			cls: items.some((item) => item.exists === false) ? "job-tracker-missing-reference" : "job-tracker-artefact-link",
-			attr: { "aria-label": `${items.length} ${label} artefact${items.length === 1 ? "" : " versions"}` },
+			attr: { "aria-label": `${items.length} ${label} artefact${items.length === 1 ? "" : " versions"}${items.some((item) => item.exists === false) ? ", missing file" : ""}` },
 		});
 		button.onclick = () => {
 			if (latest.exists === false) {

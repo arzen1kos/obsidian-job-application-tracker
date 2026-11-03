@@ -4,3 +4,4 @@ main.js
 *.log
 .DS_Store
 .obsidian/
+package-lock.json

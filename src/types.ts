@@ -81,6 +81,21 @@ export type ArtefactType =
 	| "Contract"
 	| "Custom";
 
+export const ARTEFACT_TYPES: readonly ArtefactType[] = [
+	"Job Description",
+	"CV",
+	"Cover Letter",
+	"Interview Notes",
+	"Recruiter Notes",
+	"Follow-up Notes",
+	"General Notes",
+	"Portfolio",
+	"Assessment",
+	"Offer Letter",
+	"Contract",
+	"Custom",
+];
+
 export interface ApplicationArtefact {
 	id: string;
 	type: ArtefactType;

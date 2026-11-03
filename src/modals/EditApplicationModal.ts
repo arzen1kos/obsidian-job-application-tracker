@@ -1,9 +1,10 @@
 import { App, ButtonComponent, Notice, Setting } from "obsidian";
 import JobApplicationTrackerPlugin from "../main";
-import { EmploymentType, JobApplication, JobStatus, WorkplaceType } from "../types";
+import { ApplicationArtefact, EmploymentType, JobApplication, JobStatus, WorkplaceType } from "../types";
 import { sanitizeUrl } from "../services/ApplicationService";
 import { EMPLOYMENT_OPTIONS, WORKPLACE_OPTIONS } from "../constants";
 import { BaseApplicationModal } from "./BaseApplicationModal";
+import { ArtefactEditor, migrateArtefactReferences } from "./ArtefactEditor";
 
 /**
  * Comprehensive modal dialog to edit an existing job application.
@@ -22,7 +23,7 @@ export class EditApplicationModal extends BaseApplicationModal {
 	private followUpDate = "";
 	private closingDate = "";
 	private applicationFolderPath = "";
-	private artefactReferences = "";
+	private artefacts: ApplicationArtefact[] = [];
 	private newJobDescriptionText = "";
 
 	private companyInputEl: HTMLInputElement | null = null;
@@ -58,18 +59,7 @@ export class EditApplicationModal extends BaseApplicationModal {
 		this.followUpDate = app.followUpDate || "";
 		this.closingDate = app.closingDate || "";
 		this.applicationFolderPath = app.applicationFolderPath || "";
-		const artefacts = [...(app.artefacts || [])];
-		if (app.jobDescriptionFile && !artefacts.some((item) => item.path === app.jobDescriptionFile)) {
-			artefacts.push({
-				id: `legacy-jd-${app.jobDescriptionFile}`,
-				type: "Job Description",
-				path: app.jobDescriptionFile,
-				filename: app.jobDescriptionFile.split("/").pop() || app.jobDescriptionFile,
-				createdAt: "",
-				updatedAt: "",
-			});
-		}
-		this.artefactReferences = artefacts.map((item) => `${item.type} | ${item.path}`).join("\n");
+		this.artefacts = migrateArtefactReferences(app.artefacts || [], app.jobDescriptionFile);
 	}
 
 	renderContent(): void {
@@ -234,28 +224,18 @@ export class EditApplicationModal extends BaseApplicationModal {
 				});
 			});
 
-		contentEl.createEl("h3", { text: "Application Folder & Artefacts" });
-		new Setting(contentEl)
-			.setName("Application Folder")
-			.setDesc("Optional vault-relative folder. Files remain where you organise them.")
-			.addText((text) => {
-				text.setValue(this.applicationFolderPath)
-					.setPlaceholder("Applications/Company - Role")
-					.onChange((value) => {
-						this.applicationFolderPath = value.trim();
-					});
-			});
-		new Setting(contentEl)
-			.setName("Linked Artefact Paths")
-			.setDesc("One vault-relative path per line, formatted as “Type | path”.")
-			.addTextArea((text) => {
-				text.setValue(this.artefactReferences)
-					.setPlaceholder("CV | Applications/Company - Role/CV.docx")
-					.onChange((value) => {
-						this.artefactReferences = value;
-					});
-				text.inputEl.rows = 5;
-			});
+		const artefactContainer = contentEl.createDiv({ cls: "job-tracker-artefact-editor" });
+		const discovered = this.plugin.appService.getApplicationArtefacts(this.application);
+		new ArtefactEditor(
+			this.app,
+			this.plugin,
+			{ applicationFolderPath: this.applicationFolderPath, artefacts: this.artefacts },
+			(value) => {
+				this.applicationFolderPath = value.applicationFolderPath;
+				this.artefacts = value.artefacts;
+			},
+			discovered
+		).render(artefactContainer);
 
 		// Or paste new JD text
 		new Setting(contentEl)
@@ -327,11 +307,6 @@ export class EditApplicationModal extends BaseApplicationModal {
 			if (!file) {
 				return;
 			}
-			const artefacts = this.plugin.appService.parseArtefactReferences(
-				this.artefactReferences,
-				this.application.artefacts
-			);
-
 			await this.plugin.appService.updateApplicationDetails(
 				file,
 				{
@@ -348,8 +323,8 @@ export class EditApplicationModal extends BaseApplicationModal {
 					followUpDate: this.followUpDate.trim() || undefined,
 					closingDate: this.closingDate.trim() || undefined,
 					applicationFolderPath: this.applicationFolderPath.trim() || undefined,
-					artefacts,
-					jobDescriptionFile: artefacts.find((item) => item.type === "Job Description")?.path || "",
+					artefacts: this.artefacts,
+					jobDescriptionFile: this.artefacts.find((item) => item.type === "Job Description")?.path || "",
 				},
 				this.newJobDescriptionText ? this.newJobDescriptionText.trim() : undefined
 			);

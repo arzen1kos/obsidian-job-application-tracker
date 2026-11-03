@@ -1,8 +1,9 @@
 import { App, ButtonComponent, Modal, Notice, Setting } from "obsidian";
 import JobApplicationTrackerPlugin from "../main";
-import { Contact, EmploymentType, JobStatus, WorkplaceType } from "../types";
+import { ApplicationArtefact, Contact, EmploymentType, JobStatus, WorkplaceType } from "../types";
 import { sanitizeEmail, sanitizeUrl } from "../services/ApplicationService";
 import { EMPLOYMENT_OPTIONS, WORKPLACE_OPTIONS } from "../constants";
+import { ArtefactEditor } from "./ArtefactEditor";
 
 /**
  * Modal for creating a new job application note with details and optional JD attachments.
@@ -23,7 +24,7 @@ export class NewApplicationModal extends Modal {
 	private followUpDate = "";
 	private closingDate = "";
 	private applicationFolderPath = "";
-	private artefactReferences = "";
+	private artefacts: ApplicationArtefact[] = [];
 	private notes = "";
 	private recruiterName = "";
 	private recruiterEmail = "";
@@ -227,25 +228,16 @@ export class NewApplicationModal extends Modal {
 				text.inputEl.rows = 3;
 			});
 
-		contentEl.createEl("h3", { text: "Application Folder & Artefacts" });
-		new Setting(contentEl)
-			.setName("Application Folder")
-			.setDesc("Optional vault-relative folder. Files remain where you organise them.")
-			.addText((text) => {
-				text.setPlaceholder("Applications/Company - Role").onChange((value) => {
-					this.applicationFolderPath = value.trim();
-				});
-			});
-		new Setting(contentEl)
-			.setName("Linked Artefact Paths")
-			.setDesc("Optional vault-relative paths, one per line. Use “Type | path” to choose a type.")
-			.addTextArea((text) => {
-				text.setPlaceholder("Job Description | Applications/Company - Role/JD.pdf\nCV | Applications/Company - Role/CV.docx")
-					.onChange((value) => {
-						this.artefactReferences = value;
-					});
-				text.inputEl.rows = 3;
-			});
+		const artefactContainer = contentEl.createDiv({ cls: "job-tracker-artefact-editor" });
+		new ArtefactEditor(
+			this.app,
+			this.plugin,
+			{ applicationFolderPath: this.applicationFolderPath, artefacts: this.artefacts },
+			(value) => {
+				this.applicationFolderPath = value.applicationFolderPath;
+				this.artefacts = value.artefacts;
+			}
+		).render(artefactContainer);
 
 		// Or paste plain text JD
 		let jobDescriptionText = "";
@@ -343,9 +335,8 @@ export class NewApplicationModal extends Modal {
 				applicationFolderPath: this.applicationFolderPath.trim() || undefined,
 				notes: this.notes.trim(),
 				jobDescription: jobDescriptionText.trim() || undefined,
-				artefacts: this.plugin.appService.parseArtefactReferences(this.artefactReferences),
-				jobDescriptionFile: this.plugin.appService.parseArtefactReferences(this.artefactReferences)
-					.find((artefact) => artefact.type === "Job Description")?.path,
+				artefacts: this.artefacts,
+				jobDescriptionFile: this.artefacts.find((artefact) => artefact.type === "Job Description")?.path,
 				contacts: contacts,
 			});
 

@@ -1,5 +1,5 @@
 import { App, Notice, TFile, TFolder, normalizePath, stringifyYaml } from "obsidian";
-import { ApplicationArtefact, ArtefactType, Contact, EmploymentType, InterviewRound, InterviewRoundType, JobApplication, JobApplicationFrontMatter, JobStatus, StatusHistoryEntry, WorkplaceType, isFinalStatus } from "../types";
+import { ApplicationArtefact, ARTEFACT_TYPES, ArtefactType, Contact, EmploymentType, InterviewRound, InterviewRoundType, JobApplication, JobApplicationFrontMatter, JobStatus, StatusHistoryEntry, WorkplaceType, isFinalStatus } from "../types";
 import JobApplicationTrackerPlugin from "../main";
 
 /**
@@ -220,18 +220,13 @@ export class ApplicationService {
 
 	parseArtefactReferences(value: string, existing: ApplicationArtefact[] = []): ApplicationArtefact[] {
 		const now = new Date().toISOString();
-		const supportedTypes: ArtefactType[] = [
-			"Job Description", "CV", "Cover Letter", "Interview Notes", "Recruiter Notes",
-			"Follow-up Notes", "General Notes", "Portfolio", "Assessment", "Offer Letter",
-			"Contract", "Custom",
-		];
 		const artefacts: ApplicationArtefact[] = [];
 		for (const line of value.split(/\r?\n/)) {
 			const [rawType, ...pathParts] = line.split("|");
 			const path = normalizePath((pathParts.length ? pathParts.join("|") : rawType).trim());
 			if (!path) continue;
 			const requestedType = pathParts.length ? rawType.trim() : "";
-			const type = supportedTypes.find((item) => item.toLowerCase() === requestedType.toLowerCase())
+			const type = ARTEFACT_TYPES.find((item) => item.toLowerCase() === requestedType.toLowerCase())
 				|| this.inferArtefactType(path);
 			const previous = existing.find((item) => normalizePath(item.path) === path && item.type === type);
 			artefacts.push({
@@ -281,6 +276,32 @@ export class ApplicationService {
 		if (/\bcontract\b/.test(name)) return "Contract";
 		if (name.endsWith(".md")) return "General Notes";
 		return "Custom";
+	}
+
+	private deserializeArtefacts(value: unknown): ApplicationArtefact[] {
+		if (typeof value === "string") return this.parseArtefactReferences(value);
+		if (!Array.isArray(value)) return [];
+		const artefacts: ApplicationArtefact[] = [];
+		for (const item of value) {
+			if (typeof item === "string") {
+				artefacts.push(...this.parseArtefactReferences(item));
+				continue;
+			}
+			if (!item || typeof item !== "object") continue;
+			const record = item as Record<string, unknown>;
+			if (typeof record.path !== "string" || !record.path.trim()) continue;
+			const path = normalizePath(record.path);
+			const type = ARTEFACT_TYPES.find((candidate) => candidate === record.type) || this.inferArtefactType(path);
+			artefacts.push({
+				id: typeof record.id === "string" ? record.id : `legacy-${path}`,
+				type,
+				path,
+				filename: typeof record.filename === "string" ? record.filename : path.split("/").pop() || path,
+				createdAt: typeof record.createdAt === "string" ? record.createdAt : "",
+				updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : "",
+			});
+		}
+		return artefacts;
 	}
 
 	getApplicationArtefacts(application: JobApplication): ApplicationArtefact[] {
@@ -642,7 +663,11 @@ export class ApplicationService {
 				followUpDate: data.followUpDate || undefined,
 				closingDate: data.closingDate || undefined,
 				applicationFolderPath: data.applicationFolderPath ? normalizePath(data.applicationFolderPath) : undefined,
-				artefacts: data.artefacts || (data.jobDescriptionFile ? this.parseArtefactReferences(`Job Description | ${data.jobDescriptionFile}`) : []),
+				artefacts: data.artefacts?.length
+					? data.artefacts
+					: data.jobDescriptionFile
+						? this.parseArtefactReferences(`Job Description | ${data.jobDescriptionFile}`)
+						: [],
 				jobDescriptionFile: data.jobDescriptionFile || "",
 				tags: ["job-application"],
 				contacts: data.contacts || [],
@@ -778,9 +803,7 @@ export class ApplicationService {
 			followUpDate: typeof rawFrontmatter.followUpDate === "string" ? rawFrontmatter.followUpDate : undefined,
 			closingDate: typeof rawFrontmatter.closingDate === "string" ? rawFrontmatter.closingDate : undefined,
 			applicationFolderPath: typeof rawFrontmatter.applicationFolderPath === "string" ? rawFrontmatter.applicationFolderPath : undefined,
-			artefacts: Array.isArray(rawFrontmatter.artefacts) ? rawFrontmatter.artefacts.filter((item): item is ApplicationArtefact =>
-				!!item && typeof item === "object" && typeof (item as ApplicationArtefact).path === "string"
-			) : [],
+			artefacts: this.deserializeArtefacts(rawFrontmatter.artefacts),
 			jobDescriptionFile: typeof rawFrontmatter.jobDescriptionFile === "string" ? rawFrontmatter.jobDescriptionFile : "",
 			contacts,
 			interviews,
@@ -952,19 +975,24 @@ export class ApplicationService {
 					// 3. Update Job Description section if updated
 					if (fields.jobDescriptionFile !== undefined || newJobDescriptionText !== undefined) {
 						const jdHeader = "## 📄 Job Description";
+						const jdSectionRegex = /(?:^|\n)(#{1,6}\s+(?:📄\s*)?Job Description)([\s\S]*?)(?=\n#{1,6}\s+|$)/i;
+						const existingSection = updated.match(jdSectionRegex);
+						const existingText = existingSection?.[2]
+							.replace(/^\s*> \[!abstract\][^\n]*(?:\r?\n>.*)*/m, "")
+							.trim() || "";
+						const descriptionText = newJobDescriptionText === undefined ? existingText : newJobDescriptionText;
 						let newJdContent = `${jdHeader}\n`;
 						if (currentData.jobDescriptionFile) {
 							const isPdf = currentData.jobDescriptionFile.toLowerCase().endsWith(".pdf");
 							const title = isPdf ? "Job Description (PDF)" : "Job Description (Markdown)";
 							newJdContent += `> [!abstract]- 📎 ${title}\n> ![[${currentData.jobDescriptionFile}]]\n\n`;
 						}
-						if (newJobDescriptionText) {
-							newJdContent += `${newJobDescriptionText}\n`;
+						if (descriptionText) {
+							newJdContent += `${descriptionText}\n`;
 						} else if (!currentData.jobDescriptionFile) {
 							newJdContent += `*Paste job description or requirements here...*\n`;
 						}
 
-						const jdSectionRegex = /(?:^|\n)(#{1,6}\s+(?:📄\s*)?Job Description)[\s\S]*?(?=\n#{1,6}\s+|$)/i;
 						if (jdSectionRegex.test(updated)) {
 							updated = updated.replace(jdSectionRegex, (fullMatch, header) => {
 								const prefix = fullMatch.startsWith("\n") ? "\n" : "";
