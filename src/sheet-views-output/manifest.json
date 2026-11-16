@@ -1,0 +1,9 @@
+{
+  "id": "sheet-views",
+  "name": "Sheet Views",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Excel-like sheets with typed columns, filtering, sorting, and table, gallery, kanban and calendar views.",
+  "author": "",
+  "isDesktopOnly": false
+}
